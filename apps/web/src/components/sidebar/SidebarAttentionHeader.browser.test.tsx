@@ -25,6 +25,16 @@ vi.mock("./SidebarChrome", () => ({
   SidebarChromeHeader: () => null,
   SidebarChromeFooter: () => null,
 }));
+vi.mock(import("../../state/server"), async (original) => {
+  const actual = await original();
+  const { Atom } = await import("effect/reactivity");
+  const { compileResolvedKeybindingsConfig } = await import("@t3tools/shared/keybindings");
+  const keybindings = compileResolvedKeybindingsConfig([
+    { key: "mod+shift+]", command: "thread.next" },
+    { key: "mod+shift+[", command: "thread.previous" },
+  ]);
+  return { ...actual, primaryServerKeybindingsAtom: Atom.make(keybindings) };
+});
 
 const environmentId = EnvironmentId.make("local");
 const projectId = ProjectId.make("project");
@@ -35,15 +45,17 @@ function shell(id: string, title: string, tags?: string[]) {
 }
 
 describe("sidebar attention groups", () => {
-  it("folds a group to its header and keeps the full count, also over the open thread", async () => {
+  it("folds a group to its header and the open thread, and navigates in the visible order", async () => {
     using stack = new DisposableStack();
     const previousSettings = getClientSettings();
     stack.defer(() => __setClientSettingsForTests(previousSettings));
     __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, boringSidebarEnabled: false });
-    stack.defer(() => localStorage.removeItem("t3code:sidebar:needs-you-expanded"));
-    const asking = shell("asking", "Asking thread", [THREAD_ATTENTION_TAGS["needs-you"]]);
+    stack.defer(() => localStorage.removeItem("t3code:sidebar:other-expanded"));
+    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    const open = shell("open", "Open thread");
     vi.mocked(useQuietThreadShells).mockReturnValue([
-      asking,
+      shell("asking", "Asking thread", [THREAD_ATTENTION_TAGS["needs-you"]]),
+      open,
       shell("quiet", "Quiet thread"),
       shell("done", "Done thread", [THREAD_ATTENTION_TAGS["nothing-needed"]]),
     ]);
@@ -71,7 +83,7 @@ describe("sidebar attention groups", () => {
     });
     vi.mocked(useThreadRouteTarget).mockReturnValue({
       kind: "server",
-      threadRef: { environmentId, threadId: asking.id },
+      threadRef: { environmentId, threadId: open.id },
     });
     await using screen = await render(
       <SidebarProvider>
@@ -79,22 +91,28 @@ describe("sidebar attention groups", () => {
       </SidebarProvider>,
     );
 
-    const needsYou = screen.getByTestId("sidebar-needs-you-shelf-toggle");
-    await expect.element(needsYou).toHaveTextContent("Needs you1");
+    const other = screen.getByTestId("sidebar-other-shelf-toggle");
     await expect
-      .element(screen.getByTestId("sidebar-other-shelf-toggle"))
-      .toHaveTextContent("Other1");
+      .element(screen.getByTestId("sidebar-needs-you-shelf-toggle"))
+      .toHaveTextContent("Needs you1");
+    await expect.element(other).toHaveTextContent("Other2");
     await expect
       .element(screen.getByTestId("sidebar-nothing-needed-shelf-toggle"))
       .toHaveTextContent("Nothing needed1");
+    await expect.element(screen.getByText("Quiet thread").first()).toBeVisible();
+
+    await userEvent.click(other);
+
+    await expect.element(screen.getByText("Quiet thread")).not.toBeInTheDocument();
+    await expect.element(other).toHaveTextContent("Other2");
     await expect
-      .element(screen.getByRole("button", { name: /^Asking thread/ }))
+      .element(screen.getByRole("button", { name: /^Open thread/ }))
       .toHaveAttribute("aria-current", "page");
 
-    await userEvent.click(needsYou);
-
-    await expect.element(screen.getByText("Asking thread")).not.toBeInTheDocument();
-    await expect.element(needsYou).toHaveTextContent("Needs you1");
-    await expect.element(screen.getByText("Quiet thread").first()).toBeVisible();
+    const path = () => screen.router?.history.location.pathname;
+    await userEvent.keyboard("{Control>}{Shift>}]{/Shift}{/Control}");
+    await vi.waitFor(() => expect(path()).toBe(`/${environmentId}/done`));
+    await userEvent.keyboard("{Control>}{Shift>}[[{/Shift}{/Control}");
+    await vi.waitFor(() => expect(path()).toBe(`/${environmentId}/asking`));
   });
 });

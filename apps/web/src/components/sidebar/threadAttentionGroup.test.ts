@@ -100,7 +100,11 @@ describe("attentionListItems", () => {
 
   it("emits groups in order, each header followed by its rows, and skips empty groups", () => {
     expect(
-      attentionListItems({ "needs-you": ["b"], other: [], "nothing-needed": ["a", "c"] }, expanded),
+      attentionListItems(
+        { "needs-you": ["b"], other: [], "nothing-needed": ["a", "c"] },
+        expanded,
+        null,
+      ),
     ).toEqual([
       { kind: "marker", marker: "needs-you-header" },
       { kind: "thread", key: "b", section: "active" },
@@ -115,11 +119,25 @@ describe("attentionListItems", () => {
       attentionListItems(
         { "needs-you": ["b"], other: ["d"], "nothing-needed": [] },
         { ...expanded, "needs-you": false },
+        "d",
       ),
     ).toEqual([
       { kind: "marker", marker: "needs-you-header" },
       { kind: "marker", marker: "other-header" },
       { kind: "thread", key: "d", section: "active" },
+    ]);
+  });
+
+  it("keeps the open thread's row in a folded group", () => {
+    expect(
+      attentionListItems(
+        { "needs-you": ["a", "b", "c"], other: [], "nothing-needed": [] },
+        { ...expanded, "needs-you": false },
+        "b",
+      ),
+    ).toEqual([
+      { kind: "marker", marker: "needs-you-header" },
+      { kind: "thread", key: "b", section: "active" },
     ]);
   });
 });

@@ -7,6 +7,7 @@ import { useLocalStorage } from "../../hooks/useLocalStorage";
 import {
   attentionListItems,
   partitionThreadsByAttention,
+  shownAttentionRows,
   SIDEBAR_ATTENTION_GROUPS,
   type SidebarAttentionGroup,
 } from "./threadAttentionGroup";
@@ -20,12 +21,14 @@ const threadKey = (thread: EnvironmentThreadShell) =>
 
 /**
  * Splits the flat sidebar's active threads into the Needs you, Other and Nothing needed groups,
- * each foldable with its state kept in localStorage. When `enabled` is false the active list is
- * left as is: `visibleThreads` is `activeThreads` and `listItems` is null.
+ * each foldable with its state kept in localStorage. A folded group still shows the open thread
+ * (`openThreadKey`). When `enabled` is false the active list is left as is: `visibleThreads` is
+ * `activeThreads` and `listItems` is null.
  */
 export function useSidebarAttentionGroups(
   activeThreads: readonly EnvironmentThreadShell[],
   enabled: boolean,
+  openThreadKey: string | null,
 ) {
   const [needsYouExpanded, setNeedsYouExpanded] = useLocalStorage(
     NEEDS_YOU_EXPANDED_KEY,
@@ -60,11 +63,17 @@ export function useSidebarAttentionGroups(
     groups,
     expanded,
     toggle: (group: SidebarAttentionGroup) => setters[group]((value) => !value),
-    /** Active threads in list order, without the rows of folded groups. */
+    /** Active threads in list order, as `listItems` shows them. */
     visibleThreads:
       groups === null
         ? activeThreads
-        : SIDEBAR_ATTENTION_GROUPS.flatMap((group) => (expanded[group] ? groups[group] : [])),
+        : SIDEBAR_ATTENTION_GROUPS.flatMap((group) =>
+            shownAttentionRows(
+              groups[group],
+              expanded[group],
+              (thread) => threadKey(thread) === openThreadKey,
+            ),
+          ),
     listItems:
       groups === null
         ? null
@@ -75,6 +84,7 @@ export function useSidebarAttentionGroups(
               "nothing-needed": groups["nothing-needed"].map(threadKey),
             },
             expanded,
+            openThreadKey,
           ),
     foldKey: SIDEBAR_ATTENTION_GROUPS.map((group) => expanded[group]).join(":"),
   };

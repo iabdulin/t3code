@@ -727,7 +727,7 @@ describe("lifted card clearance", () => {
   });
 });
 
-describe("sidebar drop target", () => {
+describe("attention headers", () => {
   it("attention headers inside the active list do not end it", () => {
     const items = [
       pinnedHeader,
@@ -744,5 +744,39 @@ describe("sidebar drop target", () => {
     const target = resolveSidebarDropTarget(items, "p1", "a2");
     expect(target?.section).toBe("active");
     expect(target?.activeOrder).toEqual(expect.arrayContaining(["a1", "a2", "p1"]));
+  });
+
+  it("keep their place in the drag preview", () => {
+    const items = [
+      pinnedHeader,
+      thread("p1", "pinned"),
+      divider,
+      marker("active-placeholder"),
+      marker("needs-you-header"),
+      thread("a1", "active"),
+      thread("a3", "active"),
+      marker("nothing-needed-header"),
+      thread("a2", "active"),
+      settledHeader,
+      marker("settled-placeholder"),
+    ];
+    const input = { items, settledOrder: [], settledExpanded: false };
+    const needsYou = sidebarMarkerId("needs-you-header");
+    const nothingNeeded = sidebarMarkerId("nothing-needed-header");
+
+    const lifted = preview(input, "a1", "a1");
+    expect(lifted.get(needsYou)?.scaleY).toBe(1);
+    for (const key of ["a1", "a3", "a2"]) {
+      const inPlace = preview(input, key, key);
+      for (const id of [needsYou, "a1", "a3", nothingNeeded, "a2"]) {
+        if (id !== key) expect(inPlace.get(id)).toEqual(lifted.get(needsYou));
+      }
+    }
+
+    const moved = preview(input, "a1", "a2");
+    expect(moved.get(needsYou)).toEqual(lifted.get(needsYou));
+    for (const id of ["a3", nothingNeeded, "a2"]) {
+      expect(moved.get(id)).toEqual({ ...stationary, y: lifted.get(needsYou)!.y - 83 });
+    }
   });
 });

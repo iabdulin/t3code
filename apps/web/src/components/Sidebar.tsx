@@ -492,7 +492,11 @@ function useSidebarThreads(input: {
 
   const { pinnedThreads, activeThreads, workingThreads, snoozedThreads, settledThreads } =
     partition;
-  const attention = useSidebarAttentionGroups(activeThreads, folderGroups === null);
+  const attention = useSidebarAttentionGroups(
+    activeThreads,
+    folderGroups === null,
+    routeRowThreadKey,
+  );
   // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
   const olderSettledShelf = useOlderSettledShelf({
     scopes: olderSettledScopes([...serverConfigs.keys()], scopedProjectKeys),

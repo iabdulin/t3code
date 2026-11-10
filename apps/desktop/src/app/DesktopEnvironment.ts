@@ -106,7 +106,7 @@ export function resolveDesktopAppBranding(input: {
   return {
     baseName: APP_BASE_NAME,
     stageLabel,
-    displayName: `${APP_BASE_NAME} (${stageLabel})`,
+    displayName: stageLabel === "Beta" ? "My T3 Code" : `${APP_BASE_NAME} (${stageLabel})`,
   };
 }
 

@@ -4,6 +4,7 @@ import { isThreadWorking } from "@t3tools/client-runtime/state/thread-inbox";
 import * as Schema from "effect/Schema";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
+import type { SidebarListItem } from "../Sidebar.logic";
 import {
   attentionDragOrder,
   attentionListItems,
@@ -25,7 +26,7 @@ const threadKey = (thread: EnvironmentThreadShell) =>
  * Splits the flat sidebar's active threads into the Needs you, Other and Nothing needed groups,
  * each foldable with its state kept in localStorage. A folded group still shows the open thread
  * (`openThreadKey`). When `enabled` is false the active list is left as is: `visibleThreads` is
- * `activeThreads` and `listItems` is null.
+ * `activeThreads` and `listItems` returns its rows unchanged.
  */
 export function useSidebarAttentionGroups(
   activeThreads: readonly EnvironmentThreadShell[],
@@ -81,7 +82,9 @@ export function useSidebarAttentionGroups(
               (thread) => threadKey(thread) === openThreadKey,
             ),
           ),
-    listItems: groupKeys === null ? null : attentionListItems(groupKeys, expanded, openThreadKey),
+    /** The active list's rows with group headers added and folded rows dropped; as is when off. */
+    listItems: (rows: ReadonlyArray<SidebarListItem>) =>
+      groupKeys === null ? rows : attentionListItems(rows, groupKeys, expanded, openThreadKey),
     foldKey: SIDEBAR_ATTENTION_GROUPS.map((group) => expanded[group]).join(":"),
     /** Regroups a time-ordered drag preview order (see `attentionDragOrder`); as is when off. */
     dragOrder: (

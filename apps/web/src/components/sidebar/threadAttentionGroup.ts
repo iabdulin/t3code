@@ -78,25 +78,30 @@ export function shownAttentionRows<T>(
   return expanded ? rows : rows.filter(isOpenThread);
 }
 
-/** The active list's items: each group with threads gets its header, then its shown rows. */
+/**
+ * The active list's items from its thread rows: each group with threads gets its header, then its
+ * shown rows in input order. `groupKeys` holds every active key per group; other items are dropped.
+ */
 export function attentionListItems(
-  groups: Readonly<Record<SidebarAttentionGroup, ReadonlyArray<string>>>,
+  rows: ReadonlyArray<SidebarListItem>,
+  groupKeys: Readonly<Record<SidebarAttentionGroup, ReadonlyArray<string>>>,
   expanded: Readonly<Record<SidebarAttentionGroup, boolean>>,
   openThreadKey: string | null,
-): ReadonlyArray<
-  | { kind: "thread"; key: string; section: "active" }
-  | { kind: "marker"; marker: SidebarAttentionHeaderMarker }
-> {
-  return SIDEBAR_ATTENTION_GROUPS.flatMap((group) =>
-    groups[group].length === 0
+): SidebarListItem[] {
+  return SIDEBAR_ATTENTION_GROUPS.flatMap((group): SidebarListItem[] => {
+    const keys = new Set(groupKeys[group]);
+    const groupRows = rows.filter((row) => row.kind === "thread" && keys.has(row.key));
+    return groupRows.length === 0
       ? []
       : [
-          { kind: "marker" as const, marker: `${group}-header` as const },
-          ...shownAttentionRows(groups[group], expanded[group], (key) => key === openThreadKey).map(
-            (key) => ({ kind: "thread" as const, key, section: "active" as const }),
+          { kind: "marker", marker: `${group}-header` },
+          ...shownAttentionRows(
+            groupRows,
+            expanded[group],
+            (row) => row.kind === "thread" && row.key === openThreadKey,
           ),
-        ],
-  );
+        ];
+  });
 }
 
 const isAttentionHeader = (item: SidebarListItem) =>

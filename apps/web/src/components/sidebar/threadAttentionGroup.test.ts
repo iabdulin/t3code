@@ -107,10 +107,13 @@ describe("SIDEBAR_ATTENTION_GROUPS", () => {
 
 describe("attentionListItems", () => {
   const expanded = { "needs-you": true, other: true, "nothing-needed": true };
+  const rows = (...keys: string[]) =>
+    keys.map((key) => ({ kind: "thread" as const, key, section: "active" as const }));
 
   it("emits groups in order, each header followed by its rows, and skips empty groups", () => {
     expect(
       attentionListItems(
+        rows("a", "b", "c"),
         { "needs-you": ["b"], other: [], "nothing-needed": ["a", "c"] },
         expanded,
         null,
@@ -127,6 +130,7 @@ describe("attentionListItems", () => {
   it("emits only the header of a folded group", () => {
     expect(
       attentionListItems(
+        rows("b", "d"),
         { "needs-you": ["b"], other: ["d"], "nothing-needed": [] },
         { ...expanded, "needs-you": false },
         "d",
@@ -141,6 +145,7 @@ describe("attentionListItems", () => {
   it("keeps the open thread's row in a folded group", () => {
     expect(
       attentionListItems(
+        rows("a", "b", "c"),
         { "needs-you": ["a", "b", "c"], other: [], "nothing-needed": [] },
         { ...expanded, "needs-you": false },
         "b",

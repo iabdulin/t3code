@@ -149,6 +149,11 @@ function notStarted(run: OrchestrationV2Run): OrchestrationV2Run {
   return { ...run, startedAt: null, completedAt: null };
 }
 
+/** Ended at NOW plus `minutes`; held queues can run out of ordinal order. */
+function endedAt(run: OrchestrationV2Run, minutes: number): OrchestrationV2Run {
+  return { ...run, completedAt: DateTime.add(NOW, { minutes }) };
+}
+
 const CHILD_THREAD: Partial<OrchestrationV2AppThread> = {
   lineage: {
     parentThreadId: ThreadId.make("parent"),
@@ -316,8 +321,8 @@ describe("ThreadAttentionReactor.handle", () => {
         Effect.gen(function* () {
           yield* reactor.handle(runUpdated(makeRun(ThreadId.make("replace"), 1, "completed")));
           assert.deepStrictEqual(yield* harness.dispatched, [
-            { threadId: ThreadId.make("replace"), tag: NOTHING_NEEDED, tagged: true },
             { threadId: ThreadId.make("replace"), tag: NEEDS_YOU, tagged: false },
+            { threadId: ThreadId.make("replace"), tag: NOTHING_NEEDED, tagged: true },
           ]);
         }),
     ),
@@ -423,6 +428,28 @@ describe("ThreadAttentionReactor.handle", () => {
       (reactor, harness) =>
         Effect.gen(function* () {
           yield* reactor.handle(runUpdated(run));
+          assert.deepStrictEqual(yield* harness.dispatched, [
+            { threadId: thread.id, tag: NEEDS_YOU, tagged: true },
+          ]);
+        }),
+    );
+  });
+
+  it.effect("marks a lower-ordinal run that completes after a newer one", () => {
+    const thread = makeThread("held-queue");
+    const held = endedAt(makeRun(thread.id, 1, "completed"), 2);
+    const newer = endedAt(makeRun(thread.id, 2, "completed"), 1);
+    return withReactor(
+      [
+        {
+          thread,
+          runs: [held, newer],
+          messages: [makeMessage(held, "reply", ASKS), makeMessage(newer, "reply", NOTHING)],
+        },
+      ],
+      (reactor, harness) =>
+        Effect.gen(function* () {
+          yield* reactor.handle(runUpdated(held));
           assert.deepStrictEqual(yield* harness.dispatched, [
             { threadId: thread.id, tag: NEEDS_YOU, tagged: true },
           ]);
@@ -581,6 +608,28 @@ describe("ThreadAttentionReactor.markOpenThreads", () => {
       }),
     ),
   );
+
+  it.effect("start-up pass walks runs in the order they ended", () => {
+    const thread = makeThread("startup-held-queue");
+    const held = endedAt(makeRun(thread.id, 1, "completed"), 2);
+    const newer = endedAt(makeRun(thread.id, 2, "completed"), 1);
+    return withReactor(
+      [
+        {
+          thread,
+          runs: [held, newer],
+          messages: [makeMessage(held, "reply", NOTHING), makeMessage(newer, "reply", ASKS)],
+        },
+      ],
+      (reactor, harness) =>
+        Effect.gen(function* () {
+          yield* reactor.markOpenThreads();
+          assert.deepStrictEqual(yield* harness.dispatched, [
+            { threadId: thread.id, tag: NOTHING_NEEDED, tagged: true },
+          ]);
+        }),
+    );
+  });
 
   it.effect("start-up pass looks past a queued follow-up", () => {
     const thread = makeThread("startup-queued");

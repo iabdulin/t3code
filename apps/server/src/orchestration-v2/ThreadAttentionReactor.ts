@@ -10,6 +10,7 @@ import {
   type ThreadAttentionMark,
   type ThreadId,
 } from "@t3tools/contracts";
+import { latestExecutedRun, runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -42,11 +43,13 @@ const CLEARING_STATUSES: ReadonlySet<OrchestrationV2Run["status"]> = new Set([
 ]);
 const START_UP_RUN_LOOKBACK = 5;
 
-const hasStarted = (run: OrchestrationV2Run) => run.status !== "queued" && run.startedAt !== null;
-
-/** Started runs, newest first. A queued run takes its ordinal before the active run ends. */
-const startedRunsNewestFirst = (runs: ReadonlyArray<OrchestrationV2Run>) =>
-  runs.filter(hasStarted).toSorted((a, b) => b.ordinal - a.ordinal);
+/** The runs `latestExecutedRun` chooses from, latest first. Held queues run out of ordinal order. */
+const executedRunsLatestFirst = (runs: ReadonlyArray<OrchestrationV2Run>) =>
+  runs
+    .filter(
+      (run) => run.status !== "queued" && !(run.status === "cancelled" && run.startedAt === null),
+    )
+    .toSorted((a, b) => (runRanAfter(a, b) ? -1 : runRanAfter(b, a) ? 1 : 0));
 
 const runAssistantMessages = (runId: RunId): ProjectionStore.ProjectionRecordFilter => ({
   messageRunIds: [runId],
@@ -74,7 +77,8 @@ const make = Effect.gen(function* () {
     const changes = Object.entries(THREAD_ATTENTION_TAGS)
       .map(([mark, tag]) => ({ tag, tagged: mark === wanted }))
       .filter(({ tag, tagged }) => tags.includes(tag) !== tagged)
-      .toSorted((a, b) => Number(b.tagged) - Number(a.tagged));
+      // Clearing first means a failed set leaves no mark, which the start-up pass repairs.
+      .toSorted((a, b) => Number(a.tagged) - Number(b.tagged));
     for (const { tag, tagged } of changes) {
       yield* engine.dispatch({
         type: "thread.tag.set",
@@ -94,7 +98,7 @@ const make = Effect.gen(function* () {
       if (event.type !== "run.updated") return;
       const run = event.payload;
       const clears = CLEARING_STATUSES.has(run.status);
-      if ((run.status !== "completed" && !clears) || !hasStarted(run)) return;
+      if (run.status !== "completed" && !clears) return;
       const { thread, runs, messages } = yield* projections.getThreadRecords(
         event.threadId,
         ["messages", "runs"],
@@ -107,7 +111,7 @@ const make = Effect.gen(function* () {
       ) {
         return;
       }
-      if (startedRunsNewestFirst(runs)[0]?.id !== run.id) return;
+      if (latestExecutedRun(runs)?.id !== run.id) return;
       const wanted = clears ? null : closingMark(messages);
       if (!clears && wanted === null) return;
       yield* applyMark(thread, run.id, wanted);
@@ -125,7 +129,7 @@ const make = Effect.gen(function* () {
 
   const markFromRecentRuns = Effect.fnUntraced(function* (threadId: ThreadId) {
     const { thread, runs } = yield* projections.getThreadRecords(threadId, ["runs"]);
-    for (const run of startedRunsNewestFirst(runs).slice(0, START_UP_RUN_LOOKBACK)) {
+    for (const run of executedRunsLatestFirst(runs).slice(0, START_UP_RUN_LOOKBACK)) {
       if (run.status !== "completed") return;
       const { messages } = yield* projections.getThreadRecords(
         threadId,

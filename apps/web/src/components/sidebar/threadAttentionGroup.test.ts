@@ -2,6 +2,7 @@ import { THREAD_ATTENTION_TAGS } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  attentionListItems,
   partitionThreadsByAttention,
   resolveSidebarAttentionGroup,
   SIDEBAR_ATTENTION_GROUPS,
@@ -91,5 +92,34 @@ describe("partitionThreadsByAttention", () => {
 describe("SIDEBAR_ATTENTION_GROUPS", () => {
   it("lists groups top to bottom", () => {
     expect(SIDEBAR_ATTENTION_GROUPS).toEqual(["needs-you", "other", "nothing-needed"]);
+  });
+});
+
+describe("attentionListItems", () => {
+  const expanded = { "needs-you": true, other: true, "nothing-needed": true };
+
+  it("emits groups in order, each header followed by its rows, and skips empty groups", () => {
+    expect(
+      attentionListItems({ "needs-you": ["b"], other: [], "nothing-needed": ["a", "c"] }, expanded),
+    ).toEqual([
+      { kind: "marker", marker: "needs-you-header" },
+      { kind: "thread", key: "b", section: "active" },
+      { kind: "marker", marker: "nothing-needed-header" },
+      { kind: "thread", key: "a", section: "active" },
+      { kind: "thread", key: "c", section: "active" },
+    ]);
+  });
+
+  it("emits only the header of a folded group", () => {
+    expect(
+      attentionListItems(
+        { "needs-you": ["b"], other: ["d"], "nothing-needed": [] },
+        { ...expanded, "needs-you": false },
+      ),
+    ).toEqual([
+      { kind: "marker", marker: "needs-you-header" },
+      { kind: "marker", marker: "other-header" },
+      { kind: "thread", key: "d", section: "active" },
+    ]);
   });
 });

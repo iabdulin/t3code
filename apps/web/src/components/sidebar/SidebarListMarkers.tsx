@@ -9,6 +9,7 @@ import {
   type SidebarListMarker,
 } from "../Sidebar.logic";
 import { SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
+import type { SidebarAttentionHeaderMarker } from "./threadAttentionGroup";
 
 function SortableSidebarMarker(props: {
   marker: SidebarListMarker;
@@ -111,7 +112,7 @@ export function SidebarDragBoundary(props: {
 }
 
 export function SidebarSectionHeader(props: {
-  marker: "working-header" | "snoozed-header" | "settled-header";
+  marker: "working-header" | "snoozed-header" | "settled-header" | SidebarAttentionHeaderMarker;
   label: string;
   /** A muted trailing count. */
   count: number;
@@ -120,12 +121,7 @@ export function SidebarSectionHeader(props: {
   isDropTarget?: boolean;
   toggle: { expanded: boolean; onToggle: () => void };
 }) {
-  const shelf =
-    props.marker === "working-header"
-      ? "working"
-      : props.marker === "snoozed-header"
-        ? "snoozed"
-        : "settled";
+  const shelf = props.marker.slice(0, -"-header".length);
   return (
     <SortableSidebarMarker
       marker={props.marker}

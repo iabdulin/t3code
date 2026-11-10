@@ -726,3 +726,23 @@ describe("lifted card clearance", () => {
     expect(511 + apply(511, 36, -500, 136, 114).y).toBe(250);
   });
 });
+
+describe("sidebar drop target", () => {
+  it("attention headers inside the active list do not end it", () => {
+    const items = [
+      pinnedHeader,
+      thread("p1", "pinned"),
+      divider,
+      marker("active-placeholder"),
+      marker("needs-you-header"),
+      thread("a1", "active"),
+      marker("nothing-needed-header"),
+      thread("a2", "active"),
+      settledHeader,
+      marker("settled-placeholder"),
+    ];
+    const target = resolveSidebarDropTarget(items, "p1", "a2");
+    expect(target?.section).toBe("active");
+    expect(target?.activeOrder).toEqual(expect.arrayContaining(["a1", "a2", "p1"]));
+  });
+});

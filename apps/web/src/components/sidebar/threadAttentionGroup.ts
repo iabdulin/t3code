@@ -22,7 +22,7 @@ type AttentionThreadInput = Pick<
   | "hasActionableProposedPlan"
   | "latestRun"
   | "runtime"
-> & { readonly source: { readonly tags?: ReadonlyArray<string> } };
+> & { readonly source: { readonly tags?: ReadonlyArray<string> | undefined } };
 
 /** The group an open thread belongs to. `working` is whether a turn or resumable background work is in progress. */
 export function resolveSidebarAttentionGroup(
@@ -64,4 +64,30 @@ export function partitionThreadsByAttention<T extends AttentionThreadInput>(
     groups[resolveSidebarAttentionGroup(thread, isWorking(thread))].push(thread);
   }
   return groups;
+}
+
+export type SidebarAttentionHeaderMarker = `${SidebarAttentionGroup}-header`;
+
+/** The active list's items: each group with threads gets its header, then its rows unless folded. */
+export function attentionListItems(
+  groups: Readonly<Record<SidebarAttentionGroup, ReadonlyArray<string>>>,
+  expanded: Readonly<Record<SidebarAttentionGroup, boolean>>,
+): ReadonlyArray<
+  | { kind: "thread"; key: string; section: "active" }
+  | { kind: "marker"; marker: SidebarAttentionHeaderMarker }
+> {
+  return SIDEBAR_ATTENTION_GROUPS.flatMap((group) =>
+    groups[group].length === 0
+      ? []
+      : [
+          { kind: "marker" as const, marker: `${group}-header` as const },
+          ...(expanded[group]
+            ? groups[group].map((key) => ({
+                kind: "thread" as const,
+                key,
+                section: "active" as const,
+              }))
+            : []),
+        ],
+  );
 }

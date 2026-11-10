@@ -35,6 +35,7 @@ import {
   groupSidebarThreadsByProject,
   resolveSidebarFolderDot,
   sidebarFolderExpansionKeys,
+  sidebarMarkerId,
 } from "./Sidebar.logic";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
@@ -1667,5 +1668,18 @@ describe("shouldCreateNewThreadInCurrentProject", () => {
     expect(shouldCreateNewThreadInCurrentProject(false, 1, 3)).toBe(true);
     expect(shouldCreateNewThreadInCurrentProject(false, 0, 0)).toBe(true);
     expect(shouldCreateNewThreadInCurrentProject(true, 2, 2)).toBe(true);
+  });
+});
+
+describe("sidebarMarkerId", () => {
+  it("sidebarMarkerId covers the attention headers", () => {
+    const markers: SidebarListMarker[] = [
+      "needs-you-header",
+      "other-header",
+      "nothing-needed-header",
+      "working-header",
+      "settled-header",
+    ];
+    expect(new Set(markers.map(sidebarMarkerId)).size).toBe(markers.length);
   });
 });

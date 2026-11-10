@@ -181,6 +181,12 @@ if $force || [[ "$last_built" != "$after" || -z "$zip" ]]; then
     notify "Build failed (dependency install). Kept the current app."
     exit 1
   fi
+  # A rebase can apply cleanly and still break the fork's changes. This runs the repo's
+  # checks (types, lint, tests) for the files the fork changed.
+  if ! vp env exec --node "$node_version" vp run check:changed; then
+    notify "Fork checks failed after the upstream sync. Kept the current app. See the log."
+    exit 1
+  fi
   if ! vp env exec --node "$node_version" vp run dist:desktop:dmg; then
     notify "Build failed. Kept the current app. See the log."
     exit 1

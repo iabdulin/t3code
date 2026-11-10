@@ -109,12 +109,13 @@ pauses work, so an ask that gets resolved produces a fresh "Nothing needed".)
 When a run ends any other way (`failed`, `interrupted`, `cancelled`, `rolled_back`), the
 server removes both marks. Events for a run that is not the thread's latest are ignored.
 
-A thread holds at most one mark. Setting one removes the other.
+A thread normally holds one mark or none. The server sets the new mark before it clears
+the old one, so a thread can hold both for a moment. Readers treat both as `needs-you`.
 
 ### Threads that are already open
 
-When the server starts, it sorts every thread that is not settled or archived, has no
-mark, and whose latest run is `completed`. It walks back from the latest run through at
+When the server starts, it sorts every thread that is not settled or archived, holds no
+mark or both marks, and whose latest run is `completed`. It walks back from the latest run through at
 most five runs and uses the first one whose last message gives a result. It stops early,
 leaving the thread unmarked, at a run that did not end `completed`. Looking back matters
 because the latest run can be an idle compaction or a wake with no section. This pass
@@ -180,7 +181,8 @@ thread tags (`thread.tags` on `OrchestrationV2ThreadShell`):
 - `attention:needs-you`
 - `attention:nothing-needed`
 
-A thread has neither tag or exactly one. Only the server writes them, with the existing
+A thread has neither tag or exactly one, except for the moment a mark is being replaced,
+when it has both and reads as `needs-you`. Only the server writes them, with the existing
 `thread.tag.set` command, which produces the existing `thread.tags-updated` event. Tags
 live inside the thread's `payload_json`, so there is no migration. A build without this
 feature reads the tags as plain strings and ignores them.

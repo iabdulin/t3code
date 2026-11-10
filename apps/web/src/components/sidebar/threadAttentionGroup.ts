@@ -80,7 +80,8 @@ export function shownAttentionRows<T>(
 
 /**
  * The active list's items from its thread rows: each group with threads gets its header, then its
- * shown rows in input order. `groupKeys` holds every active key per group; other items are dropped.
+ * shown rows in input order. `groupKeys` holds every active key per group; a thread row in no group
+ * goes to Other, and marker items are dropped.
  */
 export function attentionListItems(
   rows: ReadonlyArray<SidebarListItem>,
@@ -88,9 +89,13 @@ export function attentionListItems(
   expanded: Readonly<Record<SidebarAttentionGroup, boolean>>,
   openThreadKey: string | null,
 ): SidebarListItem[] {
+  const groupByKey = new Map(
+    SIDEBAR_ATTENTION_GROUPS.flatMap((group) => groupKeys[group].map((key) => [key, group])),
+  );
   return SIDEBAR_ATTENTION_GROUPS.flatMap((group): SidebarListItem[] => {
-    const keys = new Set(groupKeys[group]);
-    const groupRows = rows.filter((row) => row.kind === "thread" && keys.has(row.key));
+    const groupRows = rows.filter(
+      (row) => row.kind === "thread" && (groupByKey.get(row.key) ?? "other") === group,
+    );
     return groupRows.length === 0
       ? []
       : [

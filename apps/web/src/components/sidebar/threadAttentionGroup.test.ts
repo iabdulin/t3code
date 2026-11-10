@@ -142,6 +142,22 @@ describe("attentionListItems", () => {
     ]);
   });
 
+  it("puts a row that is in no group under Other", () => {
+    expect(
+      attentionListItems(
+        rows("a", "z"),
+        { "needs-you": ["a"], other: [], "nothing-needed": [] },
+        expanded,
+        null,
+      ),
+    ).toEqual([
+      { kind: "marker", marker: "needs-you-header" },
+      { kind: "thread", key: "a", section: "active" },
+      { kind: "marker", marker: "other-header" },
+      { kind: "thread", key: "z", section: "active" },
+    ]);
+  });
+
   it("keeps the open thread's row in a folded group", () => {
     expect(
       attentionListItems(

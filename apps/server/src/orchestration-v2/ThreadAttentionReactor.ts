@@ -2,7 +2,6 @@ import {
   CommandId,
   isListedThreadLineage,
   THREAD_ATTENTION_TAGS,
-  threadAttentionMark,
   type OrchestrationV2AppThread,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2DomainEvent,
@@ -31,7 +30,7 @@ export class ThreadAttentionReactor extends Context.Service<
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
     /** Marks or unmarks the thread of a finished run. Never fails. */
     readonly handle: (event: OrchestrationV2DomainEvent) => Effect.Effect<void>;
-    /** Marks unmarked open threads from their recent runs. Never fails. */
+    /** Marks open threads that hold no mark or both marks from their recent runs. Never fails. */
     readonly markOpenThreads: () => Effect.Effect<void>;
   }
 >()("t3/orchestration-v2/ThreadAttentionReactor") {}
@@ -43,6 +42,9 @@ const CLEARING_STATUSES: ReadonlySet<OrchestrationV2Run["status"]> = new Set([
   "rolled_back",
 ]);
 const START_UP_RUN_LOOKBACK = 5;
+
+const holdsOneMark = (tags: ReadonlyArray<string> | undefined) =>
+  Object.values(THREAD_ATTENTION_TAGS).filter((tag) => tags?.includes(tag)).length === 1;
 
 /** The runs `latestExecutedRun` chooses from, latest first. Held queues run out of ordinal order. */
 const executedRunsLatestFirst = (runs: ReadonlyArray<OrchestrationV2Run>) =>
@@ -78,8 +80,8 @@ const make = Effect.gen(function* () {
     const changes = Object.entries(THREAD_ATTENTION_TAGS)
       .map(([mark, tag]) => ({ tag, tagged: mark === wanted }))
       .filter(({ tag, tagged }) => tags.includes(tag) !== tagged)
-      // Clearing first means a failed set leaves no mark, which the start-up pass repairs.
-      .toSorted((a, b) => Number(a.tagged) - Number(b.tagged));
+      // Set before clear: both tags read as needs-you, and the start-up pass repairs a failed clear.
+      .toSorted((a, b) => Number(b.tagged) - Number(a.tagged));
     for (const { tag, tagged } of changes) {
       yield* engine.dispatch({
         type: "thread.tag.set",
@@ -156,7 +158,7 @@ const make = Effect.gen(function* () {
           shell.settledAt !== null ||
           shell.settledOverride === "settled" ||
           !isListedThreadLineage(shell.lineage) ||
-          threadAttentionMark(shell.tags) !== null
+          holdsOneMark(shell.tags)
         ) {
           continue;
         }

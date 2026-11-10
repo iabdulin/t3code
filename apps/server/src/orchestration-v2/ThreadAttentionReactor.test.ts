@@ -329,8 +329,8 @@ describe("ThreadAttentionReactor.handle", () => {
         Effect.gen(function* () {
           yield* reactor.handle(runUpdated(makeRun(ThreadId.make("replace"), 1, "completed")));
           assert.deepStrictEqual(yield* harness.dispatched, [
-            { threadId: ThreadId.make("replace"), tag: NEEDS_YOU, tagged: false },
             { threadId: ThreadId.make("replace"), tag: NOTHING_NEEDED, tagged: true },
+            { threadId: ThreadId.make("replace"), tag: NEEDS_YOU, tagged: false },
           ]);
         }),
     ),
@@ -615,6 +615,19 @@ describe("ThreadAttentionReactor.markOpenThreads", () => {
           yield* reactor.markOpenThreads();
           assert.deepStrictEqual(yield* harness.dispatched, [
             { threadId: ThreadId.make("open"), tag: NEEDS_YOU, tagged: true },
+          ]);
+        }),
+    ),
+  );
+
+  it.effect("start-up pass repairs a thread that holds both marks", () =>
+    withReactor(
+      [threadWithRun("both", "completed", NOTHING, { tags: [NOTHING_NEEDED, NEEDS_YOU] })],
+      (reactor, harness) =>
+        Effect.gen(function* () {
+          yield* reactor.markOpenThreads();
+          assert.deepStrictEqual(yield* harness.dispatched, [
+            { threadId: ThreadId.make("both"), tag: NEEDS_YOU, tagged: false },
           ]);
         }),
     ),

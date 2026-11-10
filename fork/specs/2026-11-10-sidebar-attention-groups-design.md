@@ -136,12 +136,11 @@ SNOOZED / SETTLED                   as today
   open, and the choice is remembered on the device.
 - Inside a group, threads keep the order the active list uses today.
 - Rows look as they do today, including the status label and the Thread rows setting.
-- Threads cannot be dragged into the new groups or reordered inside them. Dragging a
-  thread from one of them to Pinned or onto Settled keeps working as it does from the
-  active list. Pin, settle and snooze from the row menu work as today.
-- One gesture is lost: dragging a thread out of Pinned, Snoozed or Settled into the open
-  list to unpin, wake or un-settle it. There is no plain active list left to drop on.
-  The row menu still does all three. (Author's call.)
+- The three groups are parts of the existing active list, not new sections, so every
+  drag gesture works as today: drag to Pinned, onto Settled, or out of Pinned, Snoozed
+  or Settled into the open list. A thread dropped into the open list lands in the group
+  its state puts it in, not where it was dropped. Pin, settle and snooze from the row
+  menu work as today.
 
 ## Approaches considered
 

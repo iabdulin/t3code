@@ -25,7 +25,7 @@ import { classifyClosingSection } from "./ThreadAttentionClassifier.ts";
 export class ThreadAttentionReactor extends Context.Service<
   ThreadAttentionReactor,
   {
-    /** Runs the start-up pass, then follows domain events until the scope closes. */
+    /** Starts following domain events, then runs the start-up pass; runs until the scope closes. */
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
     /** Marks or unmarks the thread of a finished run. Never fails. */
     readonly handle: (event: OrchestrationV2DomainEvent) => Effect.Effect<void>;
@@ -42,7 +42,11 @@ const CLEARING_STATUSES: ReadonlySet<OrchestrationV2Run["status"]> = new Set([
 ]);
 const START_UP_RUN_LOOKBACK = 5;
 
-const byNewestRun = (a: OrchestrationV2Run, b: OrchestrationV2Run) => b.ordinal - a.ordinal;
+const hasStarted = (run: OrchestrationV2Run) => run.status !== "queued" && run.startedAt !== null;
+
+/** Started runs, newest first. A queued run takes its ordinal before the active run ends. */
+const startedRunsNewestFirst = (runs: ReadonlyArray<OrchestrationV2Run>) =>
+  runs.filter(hasStarted).toSorted((a, b) => b.ordinal - a.ordinal);
 
 const runAssistantMessages = (runId: RunId): ProjectionStore.ProjectionRecordFilter => ({
   messageRunIds: [runId],
@@ -90,14 +94,20 @@ const make = Effect.gen(function* () {
       if (event.type !== "run.updated") return;
       const run = event.payload;
       const clears = CLEARING_STATUSES.has(run.status);
-      if (run.status !== "completed" && !clears) return;
+      if ((run.status !== "completed" && !clears) || !hasStarted(run)) return;
       const { thread, runs, messages } = yield* projections.getThreadRecords(
         event.threadId,
         ["messages", "runs"],
         runAssistantMessages(run.id),
       );
-      if (thread.archivedAt !== null || thread.deletedAt !== null) return;
-      if (runs.toSorted(byNewestRun)[0]?.id !== run.id) return;
+      if (
+        thread.archivedAt !== null ||
+        thread.deletedAt !== null ||
+        thread.lineage.parentThreadId !== null
+      ) {
+        return;
+      }
+      if (startedRunsNewestFirst(runs)[0]?.id !== run.id) return;
       const wanted = clears ? null : closingMark(messages);
       if (!clears && wanted === null) return;
       yield* applyMark(thread, run.id, wanted);
@@ -115,7 +125,7 @@ const make = Effect.gen(function* () {
 
   const markFromRecentRuns = Effect.fnUntraced(function* (threadId: ThreadId) {
     const { thread, runs } = yield* projections.getThreadRecords(threadId, ["runs"]);
-    for (const run of runs.toSorted(byNewestRun).slice(0, START_UP_RUN_LOOKBACK)) {
+    for (const run of startedRunsNewestFirst(runs).slice(0, START_UP_RUN_LOOKBACK)) {
       if (run.status !== "completed") return;
       const { messages } = yield* projections.getThreadRecords(
         threadId,
@@ -140,8 +150,8 @@ const make = Effect.gen(function* () {
           shell.archivedAt !== null ||
           shell.settledAt !== null ||
           shell.settledOverride === "settled" ||
-          threadAttentionMark(shell.tags) !== null ||
-          shell.status !== "completed"
+          shell.lineage.parentThreadId !== null ||
+          threadAttentionMark(shell.tags) !== null
         ) {
           continue;
         }
@@ -162,11 +172,17 @@ const make = Effect.gen(function* () {
 
   const start: ThreadAttentionReactor["Service"]["start"] = () =>
     forkParked(
-      markOpenThreads().pipe(
-        Effect.andThen(Stream.runForEach(engine.streamDomainEvents, handle)),
-        Effect.catchCause((cause) =>
-          Effect.logWarning("thread attention event stream failed", { cause }),
-        ),
+      // The stream starts first so a run that ends during the pass still reaches `handle`.
+      Effect.all(
+        [
+          Stream.runForEach(engine.streamDomainEvents, handle).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("thread attention event stream failed", { cause }),
+            ),
+          ),
+          markOpenThreads(),
+        ],
+        { concurrency: "unbounded", discard: true },
       ),
     );
 

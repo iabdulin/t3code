@@ -16,6 +16,7 @@ import {
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
@@ -144,6 +145,18 @@ function runUpdated(run: OrchestrationV2Run): OrchestrationV2DomainEvent {
   };
 }
 
+function notStarted(run: OrchestrationV2Run): OrchestrationV2Run {
+  return { ...run, startedAt: null, completedAt: null };
+}
+
+const CHILD_THREAD: Partial<OrchestrationV2AppThread> = {
+  lineage: {
+    parentThreadId: ThreadId.make("parent"),
+    relationshipToParent: "subagent",
+    rootThreadId: ThreadId.make("parent"),
+  },
+};
+
 function latestRun(state: ThreadState): OrchestrationV2Run | undefined {
   return state.runs.toSorted((a, b) => b.ordinal - a.ordinal)[0];
 }
@@ -156,17 +169,27 @@ function toShell(state: ThreadState): OrchestrationV2ThreadShell {
     settledOverride: state.thread.settledOverride,
     settledAt: state.thread.settledAt,
     tags: state.thread.tags,
+    lineage: state.thread.lineage,
     latestRunId: latest?.id ?? null,
     status: latest?.status ?? "idle",
   } as OrchestrationV2ThreadShell;
 }
 
+interface HarnessOptions {
+  readonly failReads?: boolean;
+  readonly streamDomainEvents?: Stream.Stream<OrchestrationV2DomainEvent>;
+  readonly onShellSnapshot?: Effect.Effect<void>;
+}
+
 const makeHarness = Effect.fn("makeThreadAttentionHarness")(function* (
   threads: ReadonlyArray<ThreadState>,
-  options: { readonly failReads?: boolean } = {},
+  options: HarnessOptions = {},
 ) {
   const store = yield* Ref.make(threads);
   const commands = yield* Ref.make<ReadonlyArray<TagCommand>>([]);
+  const messageFilters = yield* Ref.make<
+    ReadonlyArray<ProjectionStore.ProjectionRecordFilter | undefined>
+  >([]);
 
   const applyTag = (command: TagCommand) =>
     Ref.update(store, (states) =>
@@ -184,10 +207,13 @@ const makeHarness = Effect.fn("makeThreadAttentionHarness")(function* (
 
   const dependencies = Layer.mergeAll(
     Layer.mock(ProjectionStore.ProjectionStoreV2)({
-      getThreadRecords: (threadId, _fields, filter) =>
+      getThreadRecords: (threadId, fields, filter) =>
         options.failReads === true
           ? Effect.fail(new ProjectionStore.ProjectionStoreReadError({ threadId }))
-          : Ref.get(store).pipe(
+          : Ref.update(messageFilters, (recorded) =>
+              fields.some((field) => field === "messages") ? [...recorded, filter] : recorded,
+            ).pipe(
+              Effect.andThen(Ref.get(store)),
               Effect.flatMap((states) => {
                 const state = states.find((candidate) => candidate.thread.id === threadId);
                 if (state === undefined) {
@@ -212,7 +238,8 @@ const makeHarness = Effect.fn("makeThreadAttentionHarness")(function* (
               }),
             ),
       getShellSnapshot: () =>
-        Ref.get(store).pipe(
+        (options.onShellSnapshot ?? Effect.void).pipe(
+          Effect.andThen(Ref.get(store)),
           Effect.map((states) => ({
             schemaVersion: 1,
             snapshotSequence: 1,
@@ -229,7 +256,7 @@ const makeHarness = Effect.fn("makeThreadAttentionHarness")(function* (
               Effect.as({ sequence: 1, storedEvents: [] }),
             )
           : Effect.die(new Error(`Unexpected command: ${command.type}`)),
-      streamDomainEvents: Stream.empty,
+      streamDomainEvents: options.streamDomainEvents ?? Stream.empty,
     }),
   );
 
@@ -242,6 +269,7 @@ const makeHarness = Effect.fn("makeThreadAttentionHarness")(function* (
   return {
     store,
     commands,
+    messageFilters,
     dispatched,
     layer: ThreadAttentionReactor.layer.pipe(Layer.provide(dependencies)),
   };
@@ -253,7 +281,7 @@ const withReactor = <A, E>(
     reactor: ThreadAttentionReactor.ThreadAttentionReactor["Service"],
     harness: Effect.Success<ReturnType<typeof makeHarness>>,
   ) => Effect.Effect<A, E>,
-  options: { readonly failReads?: boolean } = {},
+  options: HarnessOptions = {},
 ) =>
   Effect.gen(function* () {
     const harness = yield* makeHarness(threads, options);
@@ -356,7 +384,6 @@ describe("ThreadAttentionReactor.handle", () => {
   it.effect("uses the last finished message of the thread's own agent", () => {
     const thread = makeThread("own-agent");
     const run = makeRun(thread.id, 1, "completed");
-    const childThreadId = ThreadId.make("own-agent-subagent");
     return withReactor(
       [
         {
@@ -364,8 +391,6 @@ describe("ThreadAttentionReactor.handle", () => {
           runs: [run],
           messages: [
             makeMessage(run, "summary", NOTHING),
-            // Subagent output lives in the subagent's own thread, outside every parent run.
-            makeMessage(run, "subagent", ASKS, { threadId: childThreadId, runId: null }),
             makeMessage(run, "streaming", ASKS, { streaming: true }),
           ],
         },
@@ -373,12 +398,60 @@ describe("ThreadAttentionReactor.handle", () => {
       (reactor, harness) =>
         Effect.gen(function* () {
           yield* reactor.handle(runUpdated(run));
+          // Subagents write to their own threads, so the run and role filter is what keeps them out.
+          assert.deepStrictEqual(yield* Ref.get(harness.messageFilters), [
+            { messageRunIds: [run.id], messageRoles: ["assistant"] },
+          ]);
           assert.deepStrictEqual(yield* harness.dispatched, [
             { threadId: thread.id, tag: NOTHING_NEEDED, tagged: true },
           ]);
         }),
     );
   });
+
+  it.effect("marks a completed run while a follow-up is queued", () => {
+    const thread = makeThread("queued-follow-up");
+    const run = makeRun(thread.id, 1, "completed");
+    return withReactor(
+      [
+        {
+          thread,
+          runs: [run, notStarted(makeRun(thread.id, 2, "queued"))],
+          messages: [makeMessage(run, "reply", ASKS)],
+        },
+      ],
+      (reactor, harness) =>
+        Effect.gen(function* () {
+          yield* reactor.handle(runUpdated(run));
+          assert.deepStrictEqual(yield* harness.dispatched, [
+            { threadId: thread.id, tag: NEEDS_YOU, tagged: true },
+          ]);
+        }),
+    );
+  });
+
+  it.effect("cancelling a queued run that never started leaves the mark", () => {
+    const thread = makeThread("queued-cancel", { tags: [NEEDS_YOU] });
+    const run = makeRun(thread.id, 1, "completed");
+    const cancelled = notStarted(makeRun(thread.id, 2, "cancelled"));
+    return withReactor(
+      [{ thread, runs: [run, cancelled], messages: [makeMessage(run, "reply", ASKS)] }],
+      (reactor, harness) =>
+        Effect.gen(function* () {
+          yield* reactor.handle(runUpdated(cancelled));
+          assert.deepStrictEqual(yield* harness.dispatched, []);
+        }),
+    );
+  });
+
+  it.effect("ignores threads that have a parent", () =>
+    withReactor([threadWithRun("child", "completed", ASKS, CHILD_THREAD)], (reactor, harness) =>
+      Effect.gen(function* () {
+        yield* reactor.handle(runUpdated(makeRun(ThreadId.make("child"), 1, "completed")));
+        assert.deepStrictEqual(yield* harness.dispatched, []);
+      }),
+    ),
+  );
 
   it.effect("ignores archived threads", () =>
     withReactor(
@@ -498,5 +571,63 @@ describe("ThreadAttentionReactor.markOpenThreads", () => {
           ]);
         }),
     ),
+  );
+
+  it.effect("start-up pass skips threads that have a parent", () =>
+    withReactor([threadWithRun("child", "completed", ASKS, CHILD_THREAD)], (reactor, harness) =>
+      Effect.gen(function* () {
+        yield* reactor.markOpenThreads();
+        assert.deepStrictEqual(yield* harness.dispatched, []);
+      }),
+    ),
+  );
+
+  it.effect("start-up pass looks past a queued follow-up", () => {
+    const thread = makeThread("startup-queued");
+    const run = makeRun(thread.id, 1, "completed");
+    return withReactor(
+      [
+        {
+          thread,
+          runs: [run, notStarted(makeRun(thread.id, 2, "queued"))],
+          messages: [makeMessage(run, "reply", ASKS)],
+        },
+      ],
+      (reactor, harness) =>
+        Effect.gen(function* () {
+          yield* reactor.markOpenThreads();
+          assert.deepStrictEqual(yield* harness.dispatched, [
+            { threadId: thread.id, tag: NEEDS_YOU, tagged: true },
+          ]);
+        }),
+    );
+  });
+});
+
+describe("ThreadAttentionReactor.start", () => {
+  it.effect("subscribes to domain events before the start-up pass", () =>
+    Effect.gen(function* () {
+      const opened = yield* Deferred.make<void>();
+      const streamOpenAtPass = yield* Deferred.make<boolean>();
+      return yield* withReactor(
+        [],
+        (reactor) =>
+          Effect.scoped(
+            Effect.gen(function* () {
+              yield* reactor.start();
+              assert.isTrue(yield* Deferred.await(streamOpenAtPass));
+            }),
+          ),
+        {
+          streamDomainEvents: Stream.unwrap(
+            Deferred.succeed(opened, undefined).pipe(Effect.as(Stream.never)),
+          ),
+          onShellSnapshot: Deferred.isDone(opened).pipe(
+            Effect.flatMap((open) => Deferred.succeed(streamOpenAtPass, open)),
+            Effect.asVoid,
+          ),
+        },
+      );
+    }),
   );
 });

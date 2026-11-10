@@ -182,8 +182,16 @@ if $force || [[ "$last_built" != "$after" || -z "$zip" ]]; then
     exit 1
   fi
   # A rebase can apply cleanly and still break the fork's changes. This runs the repo's
-  # checks (types, lint, tests) for the files the fork changed.
-  if ! vp env exec --node "$node_version" vp run check:changed; then
+  # checks (types, lint, tests) for the files the fork changed. The checks count
+  # untracked files as changed, but those are not part of the build, so git ignores
+  # them for the length of the check.
+  gate_excludes="$STATE_DIR/gate-excludes"
+  {
+    cat "$(git config --get --path core.excludesFile || echo "${XDG_CONFIG_HOME:-$HOME/.config}/git/ignore")" 2>/dev/null
+    git ls-files --others --exclude-standard | sed -e 's/[\\*?[]/\\&/g' -e 's|^|/|'
+  } > "$gate_excludes"
+  if ! GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.excludesFile GIT_CONFIG_VALUE_0="$gate_excludes" \
+    vp env exec --node "$node_version" vp run check:changed; then
     notify "Fork checks failed after the upstream sync. Kept the current app. See the log."
     exit 1
   fi

@@ -8,21 +8,30 @@ function isHeading(line: string): boolean {
     .replace(/^#+/, "")
     .replace(/^[*_\s]+|[*_\s]+$/g, "")
     .replace(/:$/, "")
-    .trim();
+    .replace(/^[*_\s]+|[*_\s]+$/g, "");
   return text.toLowerCase() === HEADING;
 }
 
+function stripListMarkerAndEmphasis(line: string): string {
+  return line.replace(/^(?:[-*+]|\d+[.)])\s+/, "").replace(/^[*_]+|[*_]+$/g, "");
+}
+
 /** What the closing "What I need from you" section of an assistant message asks for.
- *  null when the message has no such section or the section is empty. */
+ *  With a heading, the first body line decides: "nothing"/"none" is nothing-needed, any
+ *  other text is needs-you, and an empty body is null. Without a heading, only a last
+ *  line starting "nothing needed from you" counts (nothing-needed); otherwise null. */
 export function classifyClosingSection(messageText: string): ThreadAttentionMark | null {
-  const lines = messageText.split(/\r?\n/);
+  const lines = messageText.split(/\r?\n/).map((line) => line.trim());
   const headingIndex = lines.findLastIndex(isHeading);
-  if (headingIndex < 0) return null;
-  const first = lines
-    .slice(headingIndex + 1)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
+  if (headingIndex < 0) {
+    const last = lines.findLast((line) => line.length > 0);
+    if (last === undefined) return null;
+    return stripListMarkerAndEmphasis(last).toLowerCase().startsWith("nothing needed from you")
+      ? "nothing-needed"
+      : null;
+  }
+  const first = lines.slice(headingIndex + 1).find((line) => line.length > 0);
   if (first === undefined) return null;
-  const text = first.replace(/^(?:[-*+]|\d+[.)])\s+/, "").replace(/^[*_]+|[*_]+$/g, "");
-  return text.toLowerCase().startsWith("nothing needed") ? "nothing-needed" : "needs-you";
+  const text = stripListMarkerAndEmphasis(first).toLowerCase();
+  return text.startsWith("nothing") || text.startsWith("none") ? "nothing-needed" : "needs-you";
 }

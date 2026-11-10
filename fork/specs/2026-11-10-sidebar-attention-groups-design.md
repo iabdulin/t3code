@@ -79,11 +79,15 @@ that run (finished streaming, written by the thread's own agent and not a subage
 looks for the closing section:
 
 1. Find the last line whose text is "what i need from you", ignoring case and Markdown
-   markup around it (`#`, `*`, `_`, a trailing colon, whitespace). No such line: no
-   result.
-2. The section body is everything after that line. Empty body: no result.
-3. Take the first non-empty body line and drop any list marker. If it starts with
-   "nothing needed" (ignoring case): `nothing-needed`. Otherwise: `needs-you`.
+   markup around it (`#`, `*`, `_`, a trailing colon, whitespace). The colon may sit
+   inside or outside the bold markers.
+2. With such a line, the section body is everything after it. Take the first non-empty
+   body line and drop any list marker. If it starts with "nothing" or "none" (ignoring
+   case): `nothing-needed`. Any other text: `needs-you`. Empty body: no result.
+3. Without such a line, look at the last non-empty line of the message and drop any list
+   marker and bold markers. If it starts with "nothing needed from you" (ignoring case):
+   `nothing-needed`. Otherwise no result. A message without the heading never gives
+   `needs-you`.
 
 A result replaces the thread's mark. No result leaves the thread's mark as it was: a
 reply without the section says nothing new about what the thread needs. This covers a

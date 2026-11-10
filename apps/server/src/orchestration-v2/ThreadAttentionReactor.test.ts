@@ -347,9 +347,9 @@ describe("ThreadAttentionReactor.handle", () => {
     ),
   );
 
-  it.effect("clears the mark when a run fails", () =>
+  it.effect("clears the mark when a run ends without completing", () =>
     Effect.forEach(
-      ["failed", "interrupted"] as const,
+      ["failed", "interrupted", "cancelled", "rolled_back"] as const,
       (status) =>
         withReactor(
           [threadWithRun("stopped", status, NOTHING, { tags: [NOTHING_NEEDED] })],

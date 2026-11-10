@@ -87,6 +87,16 @@ describe("partitionThreadsByAttention", () => {
     expect(groups.other.map((t) => t.id)).toEqual(["c"]);
     expect(groups["nothing-needed"].map((t) => t.id)).toEqual(["a", "e"]);
   });
+
+  it("puts a working thread in Other whatever its mark", () => {
+    const threads = [
+      { id: "a", ...thread({ tags: [NEEDS_YOU] }) },
+      { id: "b", ...thread({ tags: [NEEDS_YOU] }) },
+    ];
+    const groups = partitionThreadsByAttention(threads, (t) => t.id === "b");
+    expect(groups["needs-you"].map((t) => t.id)).toEqual(["a"]);
+    expect(groups.other.map((t) => t.id)).toEqual(["b"]);
+  });
 });
 
 describe("SIDEBAR_ATTENTION_GROUPS", () => {

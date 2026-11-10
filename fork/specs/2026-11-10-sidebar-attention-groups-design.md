@@ -1,6 +1,6 @@
 # Sidebar groups by what a thread needs from you
 
-Fork-only feature for "My T3 Code" (branch `mine`). Status: design, awaiting approval.
+Fork-only feature for "My T3 Code" (branch `mine`). Status: approved 2026-11-10; built.
 
 ## Summary
 
@@ -56,18 +56,19 @@ just never sees it.
 
 Checked in this order; the first match wins.
 
-| Order | Condition                                                                                                        | Group                                                                          |
-| ----- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| 1     | Snoozed, settled or pinned                                                                                       | As today                                                                       |
-| 2     | A turn is in progress, or the thread waits on background work it will resume from                                | Working, as today. With the Working section setting off, it stays in **Other** |
-| 3     | A pending approval, a pending question, a guest request, a plan waiting for a go-ahead, or the latest run failed | **Needs you**                                                                  |
-| 4     | The server marked it `needs-you`                                                                                 | **Needs you**                                                                  |
-| 5     | The server marked it `nothing-needed`                                                                            | **Nothing needed**                                                             |
-| 6     | Anything else                                                                                                    | **Other**                                                                      |
+| Order | Condition                                                                         | Group                                                                          |
+| ----- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 1     | Snoozed, settled or pinned                                                        | As today                                                                       |
+| 2     | A pending approval, a pending question or a guest request                         | **Needs you**                                                                  |
+| 3     | A turn is in progress, or the thread waits on background work it will resume from | Working, as today. With the Working section setting off, it stays in **Other** |
+| 4     | A plan waiting for a go-ahead, or the latest run failed                           | **Needs you**                                                                  |
+| 5     | The server marked it `needs-you`                                                  | **Needs you**                                                                  |
+| 6     | The server marked it `nothing-needed`                                             | **Nothing needed**                                                             |
+| 7     | Anything else                                                                     | **Other**                                                                      |
 
-Rule 3 uses facts T3 already has, so those threads sort correctly whatever the agent
-wrote. A failed thread stays in Needs you until a new run starts or the user settles it,
-whether or not the user has opened it.
+Rules 2 and 4 use facts T3 already has, so those threads sort correctly whatever the
+agent wrote. A failed thread stays in Needs you until a new run starts or the user
+settles it, whether or not the user has opened it.
 
 A server mark is ignored while a turn is in progress, so a stale mark from the previous
 turn never places a working thread.
@@ -78,14 +79,23 @@ When a run ends with status `completed`, the server takes the last assistant mes
 that run (finished streaming, written by the thread's own agent and not a subagent) and
 looks for the closing section:
 
-1. Find the last line whose text is "what i need from you", ignoring case and Markdown
-   markup around it (`#`, `*`, `_`, a trailing colon, whitespace). The colon may sit
-   inside or outside the bold markers.
-2. With such a line, the section body is everything after it. Take the first non-empty
-   body line and drop any list marker. If it starts with "nothing" or "none" (ignoring
-   case): `nothing-needed`. Any other text: `needs-you`. Empty body: no result.
-3. Without such a line, look at the last non-empty line of the message and drop any list
-   marker and bold markers. If it starts with "nothing needed from you" (ignoring case):
+1. Find the last heading line. After dropping a leading `>`, `#`, `*` or `_`, it starts
+   with "what i need from you" (ignoring case), followed by the end of the line, a colon,
+   a dash or an opening parenthesis. Markup may sit around the colon or dash. A trailing
+   note such as "(1 item)" is ignored. Prose such as "What I need from you is patience"
+   is not a heading.
+2. With a heading, the first line of the section decides: the text after the colon or
+   dash on the heading line, else the first non-empty line below it. Drop any leading
+   `>`, list marker and bold markers. The result is `nothing-needed` when the line starts
+   with "nothing needed" and its first sentence has no "but", "except", "unless" or
+   "however", or when the whole line is one short sentence (at most six words, no comma)
+   that starts with the word "nothing" or "none", such as "Nothing right now" or "None".
+   Any other text gives `needs-you`. An empty section gives no result. The rule leans
+   towards `needs-you`: an ask filed under Nothing needed is hidden, while a finished
+   thread filed under Needs you costs one click.
+3. Without a heading, look at the last non-empty line of the message and drop any list
+   marker and bold markers. If it starts with "nothing needed from you" (ignoring case)
+   and its first sentence has no "but", "except", "unless" or "however":
    `nothing-needed`. Otherwise no result. A message without the heading never gives
    `needs-you`.
 
@@ -217,7 +227,7 @@ only place that reads the two tags.
 - Verify that the projection already holds the run's final message when `run.updated`
   is delivered on `streamDomainEvents`. If it can lag, wait for it the way
   `ThreadManagementService.settleAfterRun` waits for a run.
-- The exact client predicates for rule 3. Reuse the helpers behind
+- The exact client predicates for rules 2 and 4. Reuse the helpers behind
   `resolveThreadStatusPill`; for "latest run failed" use the run status, not the
   unseen-failure helper.
 - How the drag-and-drop helpers (`sectionAtSidebarSlot`, `resolveSidebarDropTarget`,

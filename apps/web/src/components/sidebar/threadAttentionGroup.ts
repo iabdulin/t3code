@@ -105,12 +105,18 @@ const isAttentionHeader = (item: SidebarListItem) =>
 
 /**
  * A time-ordered drag preview's active order, regrouped: each group's header id, then its keys in
- * the given order. Keys `groupOf` cannot place are left out.
+ * the given order. `groupKeys` holds every active key per group, folded or not; `groupOfOther`
+ * places a key from outside the active list, such as a thread dragged in from Pinned.
  */
 export function attentionDragOrder(
   keys: ReadonlyArray<string>,
-  groupOf: (key: string) => SidebarAttentionGroup | undefined,
+  groupKeys: Readonly<Record<SidebarAttentionGroup, ReadonlyArray<string>>>,
+  groupOfOther: (key: string) => SidebarAttentionGroup | undefined,
 ): string[] {
+  const groupByKey = new Map(
+    SIDEBAR_ATTENTION_GROUPS.flatMap((group) => groupKeys[group].map((key) => [key, group])),
+  );
+  const groupOf = (key: string) => groupByKey.get(key) ?? groupOfOther(key);
   return SIDEBAR_ATTENTION_GROUPS.flatMap((group) => {
     const rows = keys.filter((key) => groupOf(key) === group);
     return rows.length === 0 ? [] : [sidebarMarkerId(`${group}-header`), ...rows];
@@ -119,8 +125,8 @@ export function attentionDragOrder(
 
 /**
  * The active list's drag preview when it has attention headers, else null. An `order` from
- * `attentionDragOrder` places every row in its group. Without one, headers stay put, a row that
- * keeps its neighbours keeps its slot, and a moved row follows its new predecessor.
+ * `attentionDragOrder` naming every shown header places every row in its group. Otherwise headers
+ * stay put, a row that keeps its neighbours keeps its slot, and a moved row follows its predecessor.
  */
 export function attentionDragPreview(
   items: ReadonlyArray<SidebarListItem>,
@@ -137,7 +143,7 @@ export function attentionDragPreview(
   );
   const rowKeys = (list: ReadonlyArray<SidebarListItem>) =>
     list.flatMap((item) => (item.kind === "thread" ? [item.key] : [])).join("\n");
-  if (order.some((id) => headers.has(id))) {
+  if ([...headers.keys()].every((id) => order.includes(id))) {
     const rows = new Map(activeRows.map((row) => [row.key, row]));
     run = order.flatMap((id) => {
       const item = rows.get(id) ?? headers.get(id);

@@ -795,14 +795,14 @@ describe("attention headers", () => {
       settledHeader,
       marker("settled-placeholder"),
     ];
-    const groupOf = (key: string) =>
-      key === "a1" || key === "a3" ? ("needs-you" as const) : ("nothing-needed" as const);
+    const groupKeys = { "needs-you": ["a1", "a3"], other: [], "nothing-needed": ["a2"] };
+    const pinnedGroup = (key: string) => (key === "p1" ? ("nothing-needed" as const) : undefined);
     const needsYou = sidebarMarkerId("needs-you-header");
     const nothingNeeded = sidebarMarkerId("nothing-needed-header");
     const base = { items, settledOrder: [], settledExpanded: false };
     const rested = preview(base, "a1", "a1").get(needsYou);
 
-    const activeOrder = attentionDragOrder(["a2", "a1", "a3"], groupOf);
+    const activeOrder = attentionDragOrder(["a2", "a1", "a3"], groupKeys, pinnedGroup);
     for (const key of ["a1", "a3", "a2"]) {
       const inPlace = preview({ ...base, activeOrder }, key, key);
       for (const id of [needsYou, "a1", "a3", nothingNeeded, "a2"]) {
@@ -810,7 +810,7 @@ describe("attention headers", () => {
       }
     }
 
-    const unpinOrder = attentionDragOrder(["p1", "a2", "a1", "a3"], groupOf);
+    const unpinOrder = attentionDragOrder(["p1", "a2", "a1", "a3"], groupKeys, pinnedGroup);
     const unpinned = preview({ ...base, activeOrder: unpinOrder }, "p1", "a1");
     const args = layout(items, "p1", "a1");
     const top = (id: string) =>
@@ -818,5 +818,40 @@ describe("attention headers", () => {
       unpinned.get(id)!.y;
     expect(top(nothingNeeded) - top("a3")).toBe(83);
     expect(top("a2") - top(nothingNeeded)).toBe(33 + 83);
+  });
+
+  it("keep a folded group's header while a row is lifted under a time order", () => {
+    const items = [
+      pinnedHeader,
+      divider,
+      marker("active-placeholder"),
+      marker("needs-you-header"),
+      thread("a1", "active"),
+      marker("other-header"),
+      marker("nothing-needed-header"),
+      thread("a2", "active"),
+      settledHeader,
+      marker("settled-placeholder"),
+    ];
+    const ids = [
+      sidebarMarkerId("needs-you-header"),
+      "a1",
+      sidebarMarkerId("other-header"),
+      sidebarMarkerId("nothing-needed-header"),
+      "a2",
+    ];
+    const base = { items, settledOrder: [], settledExpanded: false };
+    const rested = preview(base, "a1", "a1").get(ids[0]!);
+    const noOther = () => undefined;
+    const withHidden = { "needs-you": ["a1"], other: ["o1"], "nothing-needed": ["a2"] };
+    // An order that misses a shown header falls back to keeping every header in its slot.
+    const withoutHidden = { ...withHidden, other: [] };
+    for (const groupKeys of [withHidden, withoutHidden]) {
+      const activeOrder = attentionDragOrder(["o1", "a2", "a1"], groupKeys, noOther);
+      for (const key of ["a1", "a2"]) {
+        const inPlace = preview({ ...base, activeOrder }, key, key);
+        for (const id of ids) if (id !== key) expect(inPlace.get(id)).toEqual(rested);
+      }
+    }
   });
 });

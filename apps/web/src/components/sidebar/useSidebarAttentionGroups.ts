@@ -60,6 +60,11 @@ export function useSidebarAttentionGroups(
   const groups = enabled
     ? partitionThreadsByAttention<EnvironmentThreadShell>(activeThreads, isThreadWorking)
     : null;
+  const groupKeys = groups && {
+    "needs-you": groups["needs-you"].map(threadKey),
+    other: groups.other.map(threadKey),
+    "nothing-needed": groups["nothing-needed"].map(threadKey),
+  };
   return {
     /** Every thread per group, folded or not. Null when grouping is off. */
     groups,
@@ -76,27 +81,16 @@ export function useSidebarAttentionGroups(
               (thread) => threadKey(thread) === openThreadKey,
             ),
           ),
-    listItems:
-      groups === null
-        ? null
-        : attentionListItems(
-            {
-              "needs-you": groups["needs-you"].map(threadKey),
-              other: groups.other.map(threadKey),
-              "nothing-needed": groups["nothing-needed"].map(threadKey),
-            },
-            expanded,
-            openThreadKey,
-          ),
+    listItems: groupKeys === null ? null : attentionListItems(groupKeys, expanded, openThreadKey),
     foldKey: SIDEBAR_ATTENTION_GROUPS.map((group) => expanded[group]).join(":"),
     /** Regroups a time-ordered drag preview order (see `attentionDragOrder`); as is when off. */
     dragOrder: (
       keys: ReadonlyArray<string>,
       threadByKey: ReadonlyMap<string, EnvironmentThreadShell>,
     ): ReadonlyArray<string> =>
-      groups === null
+      groupKeys === null
         ? keys
-        : attentionDragOrder(keys, (key) => {
+        : attentionDragOrder(keys, groupKeys, (key) => {
             const thread = threadByKey.get(key);
             return thread && resolveSidebarAttentionGroup(thread, isThreadWorking(thread));
           }),

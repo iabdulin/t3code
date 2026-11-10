@@ -162,6 +162,14 @@ const CHILD_THREAD: Partial<OrchestrationV2AppThread> = {
   },
 };
 
+const FORK_THREAD: Partial<OrchestrationV2AppThread> = {
+  lineage: {
+    parentThreadId: ThreadId.make("source"),
+    relationshipToParent: "fork",
+    rootThreadId: ThreadId.make("source"),
+  },
+};
+
 function latestRun(state: ThreadState): OrchestrationV2Run | undefined {
   return state.runs.toSorted((a, b) => b.ordinal - a.ordinal)[0];
 }
@@ -471,12 +479,24 @@ describe("ThreadAttentionReactor.handle", () => {
     );
   });
 
-  it.effect("ignores threads that have a parent", () =>
+  it.effect("ignores subagent threads", () =>
     withReactor([threadWithRun("child", "completed", ASKS, CHILD_THREAD)], (reactor, harness) =>
       Effect.gen(function* () {
         yield* reactor.handle(runUpdated(makeRun(ThreadId.make("child"), 1, "completed")));
         assert.deepStrictEqual(yield* harness.dispatched, []);
       }),
+    ),
+  );
+
+  it.effect("marks a fork and replaces the mark it inherited", () =>
+    withReactor(
+      [threadWithRun("fork", "completed", ASKS, { ...FORK_THREAD, tags: [NOTHING_NEEDED] })],
+      (reactor, harness) =>
+        Effect.gen(function* () {
+          yield* reactor.handle(runUpdated(makeRun(ThreadId.make("fork"), 1, "completed")));
+          const [state] = yield* Ref.get(harness.store);
+          assert.deepStrictEqual(state?.thread.tags, [NEEDS_YOU]);
+        }),
     ),
   );
 
@@ -600,11 +620,22 @@ describe("ThreadAttentionReactor.markOpenThreads", () => {
     ),
   );
 
-  it.effect("start-up pass skips threads that have a parent", () =>
+  it.effect("start-up pass skips subagent threads", () =>
     withReactor([threadWithRun("child", "completed", ASKS, CHILD_THREAD)], (reactor, harness) =>
       Effect.gen(function* () {
         yield* reactor.markOpenThreads();
         assert.deepStrictEqual(yield* harness.dispatched, []);
+      }),
+    ),
+  );
+
+  it.effect("start-up pass marks a fork", () =>
+    withReactor([threadWithRun("fork", "completed", ASKS, FORK_THREAD)], (reactor, harness) =>
+      Effect.gen(function* () {
+        yield* reactor.markOpenThreads();
+        assert.deepStrictEqual(yield* harness.dispatched, [
+          { threadId: ThreadId.make("fork"), tag: NEEDS_YOU, tagged: true },
+        ]);
       }),
     ),
   );

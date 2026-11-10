@@ -1,5 +1,6 @@
 import {
   CommandId,
+  isListedThreadLineage,
   THREAD_ATTENTION_TAGS,
   threadAttentionMark,
   type OrchestrationV2AppThread,
@@ -107,7 +108,7 @@ const make = Effect.gen(function* () {
       if (
         thread.archivedAt !== null ||
         thread.deletedAt !== null ||
-        thread.lineage.parentThreadId !== null
+        !isListedThreadLineage(thread.lineage)
       ) {
         return;
       }
@@ -154,7 +155,7 @@ const make = Effect.gen(function* () {
           shell.archivedAt !== null ||
           shell.settledAt !== null ||
           shell.settledOverride === "settled" ||
-          shell.lineage.parentThreadId !== null ||
+          !isListedThreadLineage(shell.lineage) ||
           threadAttentionMark(shell.tags) !== null
         ) {
           continue;

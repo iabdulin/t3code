@@ -234,14 +234,42 @@ if ! wait_until_idle; then
   exit 0
 fi
 
-APP_MAIN_PATTERN="/Applications/($APP_NAME|T3 Code \\(Beta\\))\\.app/Contents/MacOS/[^/]+$"
+APP_BUNDLE_PATTERN="/Applications/($APP_NAME|T3 Code \\(Beta\\))\\.app/Contents"
+APP_MAIN_PATTERN="$APP_BUNDLE_PATTERN/MacOS/[^/]+$"
+APP_SERVER_PATTERN="$APP_BUNDLE_PATTERN/.*/apps/server/dist/bin\\.mjs"
 app_pids() { pgrep -f "$APP_MAIN_PATTERN"; }
+app_server_pids() { pgrep -f "$APP_SERVER_PATTERN"; }
+ask_app_to_quit() {
+  osascript -e "with timeout of 5 seconds" -e "tell application id \"$APP_BUNDLE_ID\" to quit" -e "end timeout" >/dev/null 2>&1
+}
+
+# Quits the app and returns 0 once its main process is gone. The app can close its
+# windows and stop its server yet stay alive in the Dock. Its server holds the thread
+# data, so once the server is gone the request is repeated and then forced. While the
+# server is still running nothing is forced: returns 1 after 60 seconds.
+quit_app() {
+  local step
+  ask_app_to_quit
+  for _ in $(seq 1 60); do
+    [[ -z "$(app_pids)" ]] && return 0
+    [[ -z "$(app_server_pids)" ]] && break
+    sleep 1
+  done
+  [[ -n "$(app_server_pids)" ]] && return 1
+  for step in wait ask term kill; do
+    case $step in
+      ask) log "the app stopped its server but stayed open, asking it to quit again"; ask_app_to_quit ;;
+      term) log "still open, sending TERM"; pkill -TERM -f "$APP_MAIN_PATTERN" ;;
+      kill) log "still open, killing the leftover app process"; pkill -KILL -f "$APP_MAIN_PATTERN" ;;
+    esac
+    for _ in $(seq 1 10); do [[ -z "$(app_pids)" ]] && return 0; sleep 1; done
+  done
+  return 1
+}
+
 if [[ -n "$(app_pids)" ]]; then
   log "quitting the app"
-  osascript -e "with timeout of 30 seconds" -e "tell application id \"$APP_BUNDLE_ID\" to quit" -e "end timeout" >/dev/null 2>&1 \
-    || pkill -TERM -f "$APP_MAIN_PATTERN"
-  for _ in $(seq 1 90); do [[ -z "$(app_pids)" ]] && break; sleep 1; done
-  if [[ -n "$(app_pids)" ]]; then
+  if ! quit_app; then
     notify "The app did not quit. Install skipped."
     exit 1
   fi

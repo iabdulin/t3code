@@ -197,6 +197,23 @@ if ! ditto -x -k "$zip" "$staging" || [[ ! -d "$staging/$APP_NAME.app" ]]; then
   exit 1
 fi
 
+# Sign with the local identity from setup-signing.sh, so the app's identity (and with
+# it Keychain "Always Allow" and privacy permissions) stays the same across builds.
+SIGNING_IDENTITY="My T3 Code Local Signing"
+SIGNING_KEYCHAIN="$HOME/Library/Keychains/my-t3code-signing.keychain-db"
+SIGNING_PASSWORD_FILE="$STATE_DIR/signing-keychain-password"
+if [[ -f "$SIGNING_KEYCHAIN" && -f "$SIGNING_PASSWORD_FILE" ]]; then
+  if ! { security unlock-keychain -p "$(cat "$SIGNING_PASSWORD_FILE")" "$SIGNING_KEYCHAIN" &&
+    codesign --force --deep --sign "$SIGNING_IDENTITY" --keychain "$SIGNING_KEYCHAIN" "$staging/$APP_NAME.app" &&
+    codesign --verify --deep --strict "$staging/$APP_NAME.app"; }; then
+    notify "Signing failed. Kept the current app. See the log."
+    exit 1
+  fi
+  log "signed with \"$SIGNING_IDENTITY\""
+else
+  log "no local signing identity (run fork/setup-signing.sh), installing the ad-hoc build"
+fi
+
 # --- Install when idle --------------------------------------------------------
 if ! wait_until_idle; then
   notify "Built, but threads kept running. Will install on the next run."

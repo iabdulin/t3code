@@ -2,7 +2,7 @@ import { threadAttentionMark } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 
 import { isLatestRunSettled } from "~/session-logic";
-import type { SidebarListItem } from "../Sidebar.logic";
+import { sidebarListItemId, sidebarMarkerId, type SidebarListItem } from "../Sidebar.logic";
 
 export type SidebarAttentionGroup = "needs-you" | "other" | "nothing-needed";
 
@@ -104,23 +104,46 @@ const isAttentionHeader = (item: SidebarListItem) =>
   SIDEBAR_ATTENTION_GROUPS.some((group) => item.marker === `${group}-header`);
 
 /**
- * The drag preview of the active list when it has attention headers, or null when it has none.
- * `activeRows` is the previewed row order, holding the dragged row (`draggedKey`) if it lands
- * here. Headers keep their place; a row that keeps its neighbours keeps its slot, any other
- * dragged row goes right after its new predecessor.
+ * A time-ordered drag preview's active order, regrouped: each group's header id, then its keys in
+ * the given order. Keys `groupOf` cannot place are left out.
+ */
+export function attentionDragOrder(
+  keys: ReadonlyArray<string>,
+  groupOf: (key: string) => SidebarAttentionGroup | undefined,
+): string[] {
+  return SIDEBAR_ATTENTION_GROUPS.flatMap((group) => {
+    const rows = keys.filter((key) => groupOf(key) === group);
+    return rows.length === 0 ? [] : [sidebarMarkerId(`${group}-header`), ...rows];
+  });
+}
+
+/**
+ * The active list's drag preview when it has attention headers, else null. An `order` from
+ * `attentionDragOrder` places every row in its group. Without one, headers stay put, a row that
+ * keeps its neighbours keeps its slot, and a moved row follows its new predecessor.
  */
 export function attentionDragPreview(
   items: ReadonlyArray<SidebarListItem>,
   activeRows: ReadonlyArray<Extract<SidebarListItem, { kind: "thread" }>>,
   draggedKey: string,
+  order: ReadonlyArray<string> = [],
 ): SidebarListItem[] | null {
-  if (!items.some(isAttentionHeader)) return null;
-  const run = items.filter(
+  const headers = new Map(
+    items.filter(isAttentionHeader).map((item) => [sidebarListItemId(item), item]),
+  );
+  if (headers.size === 0) return null;
+  let run = items.filter(
     (item) => (item.kind === "thread" && item.section === "active") || isAttentionHeader(item),
   );
   const rowKeys = (list: ReadonlyArray<SidebarListItem>) =>
     list.flatMap((item) => (item.kind === "thread" ? [item.key] : [])).join("\n");
-  if (rowKeys(run) !== rowKeys(activeRows)) {
+  if (order.some((id) => headers.has(id))) {
+    const rows = new Map(activeRows.map((row) => [row.key, row]));
+    run = order.flatMap((id) => {
+      const item = rows.get(id) ?? headers.get(id);
+      return item ? [item] : [];
+    });
+  } else if (rowKeys(run) !== rowKeys(activeRows)) {
     const from = run.findIndex((item) => item.kind === "thread" && item.key === draggedKey);
     if (from !== -1) run.splice(from, 1);
     const to = activeRows.findIndex((row) => row.key === draggedKey);

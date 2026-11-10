@@ -2059,7 +2059,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     enabled: !isContextDrag,
     boundaryLabelHeight: SIDEBAR_DRAG_LABEL_HEIGHT,
     settledOrder: draggedSettledOrder,
-    ...(draggedActiveOrder === undefined ? {} : { activeOrder: draggedActiveOrder }),
+    ...(draggedActiveOrder === undefined
+      ? {}
+      : { activeOrder: attention.dragOrder(draggedActiveOrder, threadByKey) }),
     settledExpanded: settledShelfExpanded,
     settledVisibleCount,
     routeThreadKey: routeRowThreadKey,

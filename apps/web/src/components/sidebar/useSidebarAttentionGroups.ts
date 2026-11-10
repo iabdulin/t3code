@@ -5,8 +5,10 @@ import * as Schema from "effect/Schema";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import {
+  attentionDragOrder,
   attentionListItems,
   partitionThreadsByAttention,
+  resolveSidebarAttentionGroup,
   shownAttentionRows,
   SIDEBAR_ATTENTION_GROUPS,
   type SidebarAttentionGroup,
@@ -87,6 +89,17 @@ export function useSidebarAttentionGroups(
             openThreadKey,
           ),
     foldKey: SIDEBAR_ATTENTION_GROUPS.map((group) => expanded[group]).join(":"),
+    /** Regroups a time-ordered drag preview order (see `attentionDragOrder`); as is when off. */
+    dragOrder: (
+      keys: ReadonlyArray<string>,
+      threadByKey: ReadonlyMap<string, EnvironmentThreadShell>,
+    ): ReadonlyArray<string> =>
+      groups === null
+        ? keys
+        : attentionDragOrder(keys, (key) => {
+            const thread = threadByKey.get(key);
+            return thread && resolveSidebarAttentionGroup(thread, isThreadWorking(thread));
+          }),
   };
 }
 

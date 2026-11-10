@@ -14,6 +14,7 @@ import {
   type SidebarListMarker,
   type SidebarSection,
 } from "./Sidebar.logic";
+import { attentionDragOrder } from "./sidebar/threadAttentionGroup";
 
 const thread = (key: string, section: SidebarSection): SidebarListItem => ({
   kind: "thread",
@@ -778,5 +779,44 @@ describe("attention headers", () => {
     for (const id of ["a3", nothingNeeded, "a2"]) {
       expect(moved.get(id)).toEqual({ ...stationary, y: lifted.get(needsYou)!.y - 83 });
     }
+  });
+
+  it("keep their place under a time order that interleaves the groups", () => {
+    const items = [
+      pinnedHeader,
+      thread("p1", "pinned"),
+      divider,
+      marker("active-placeholder"),
+      marker("needs-you-header"),
+      thread("a1", "active"),
+      thread("a3", "active"),
+      marker("nothing-needed-header"),
+      thread("a2", "active"),
+      settledHeader,
+      marker("settled-placeholder"),
+    ];
+    const groupOf = (key: string) =>
+      key === "a1" || key === "a3" ? ("needs-you" as const) : ("nothing-needed" as const);
+    const needsYou = sidebarMarkerId("needs-you-header");
+    const nothingNeeded = sidebarMarkerId("nothing-needed-header");
+    const base = { items, settledOrder: [], settledExpanded: false };
+    const rested = preview(base, "a1", "a1").get(needsYou);
+
+    const activeOrder = attentionDragOrder(["a2", "a1", "a3"], groupOf);
+    for (const key of ["a1", "a3", "a2"]) {
+      const inPlace = preview({ ...base, activeOrder }, key, key);
+      for (const id of [needsYou, "a1", "a3", nothingNeeded, "a2"]) {
+        if (id !== key) expect(inPlace.get(id)).toEqual(rested);
+      }
+    }
+
+    const unpinOrder = attentionDragOrder(["p1", "a2", "a1", "a3"], groupOf);
+    const unpinned = preview({ ...base, activeOrder: unpinOrder }, "p1", "a1");
+    const args = layout(items, "p1", "a1");
+    const top = (id: string) =>
+      args.rects[items.findIndex((item) => sidebarListItemId(item) === id)]!.top +
+      unpinned.get(id)!.y;
+    expect(top(nothingNeeded) - top("a3")).toBe(83);
+    expect(top("a2") - top(nothingNeeded)).toBe(33 + 83);
   });
 });

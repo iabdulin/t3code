@@ -176,7 +176,7 @@ export function createSidebarSortingStrategy(input: {
     marker("pinned-header");
     projected.push(...groups.pinned);
     marker("pinned-divider");
-    const attentionRun = attentionDragPreview(items, groups.active, active.key);
+    const attentionRun = attentionDragPreview(items, groups.active, active.key, order);
     if (attentionRun) projected.push(...attentionRun);
     else section("active");
     if (items.some((item) => item.kind === "marker" && item.marker === "working-header")) {

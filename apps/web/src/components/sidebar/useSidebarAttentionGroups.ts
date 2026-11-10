@@ -15,9 +15,22 @@ import {
   type SidebarAttentionGroup,
 } from "./threadAttentionGroup";
 
-const NEEDS_YOU_EXPANDED_KEY = "t3code:sidebar:needs-you-expanded";
-const OTHER_EXPANDED_KEY = "t3code:sidebar:other-expanded";
-const NOTHING_NEEDED_EXPANDED_KEY = "t3code:sidebar:nothing-needed-expanded";
+const EXPANDED_STORAGE_KEYS: Record<SidebarAttentionGroup, string> = {
+  "needs-you": "t3code:sidebar:needs-you-expanded",
+  other: "t3code:sidebar:other-expanded",
+  "nothing-needed": "t3code:sidebar:nothing-needed-expanded",
+};
+
+const useGroupExpanded = (group: SidebarAttentionGroup) =>
+  useLocalStorage(EXPANDED_STORAGE_KEYS[group], true, Schema.Boolean);
+
+const mapGroups = <T, U>(
+  byGroup: Record<SidebarAttentionGroup, T>,
+  fn: (value: T) => U,
+): Record<SidebarAttentionGroup, U> =>
+  Object.fromEntries(
+    SIDEBAR_ATTENTION_GROUPS.map((group) => [group, fn(byGroup[group])]),
+  ) as Record<SidebarAttentionGroup, U>;
 
 const threadKey = (thread: EnvironmentThreadShell) =>
   scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
@@ -33,39 +46,24 @@ export function useSidebarAttentionGroups(
   enabled: boolean,
   openThreadKey: string | null,
 ) {
-  const [needsYouExpanded, setNeedsYouExpanded] = useLocalStorage(
-    NEEDS_YOU_EXPANDED_KEY,
-    true,
-    Schema.Boolean,
-  );
-  const [otherExpanded, setOtherExpanded] = useLocalStorage(
-    OTHER_EXPANDED_KEY,
-    true,
-    Schema.Boolean,
-  );
-  const [nothingNeededExpanded, setNothingNeededExpanded] = useLocalStorage(
-    NOTHING_NEEDED_EXPANDED_KEY,
-    true,
-    Schema.Boolean,
-  );
-  const expanded: Record<SidebarAttentionGroup, boolean> = {
-    "needs-you": needsYouExpanded,
-    other: otherExpanded,
-    "nothing-needed": nothingNeededExpanded,
+  // Hooks cannot be called in a loop; the Record type makes a missing group a compile error.
+  const states: Record<SidebarAttentionGroup, ReturnType<typeof useGroupExpanded>> = {
+    "needs-you": useGroupExpanded("needs-you"),
+    other: useGroupExpanded("other"),
+    "nothing-needed": useGroupExpanded("nothing-needed"),
   };
-  const setters = {
-    "needs-you": setNeedsYouExpanded,
-    other: setOtherExpanded,
-    "nothing-needed": setNothingNeededExpanded,
-  };
+  const expanded = mapGroups(states, ([value]) => value);
+  const setters = mapGroups(states, ([, set]) => set);
   const groups = enabled
     ? partitionThreadsByAttention<EnvironmentThreadShell>(activeThreads, isThreadWorking)
     : null;
-  const groupKeys = groups && {
-    "needs-you": groups["needs-you"].map(threadKey),
-    other: groups.other.map(threadKey),
-    "nothing-needed": groups["nothing-needed"].map(threadKey),
-  };
+  const groupByKey =
+    groups &&
+    new Map(
+      SIDEBAR_ATTENTION_GROUPS.flatMap((group) =>
+        groups[group].map((thread) => [threadKey(thread), group] as const),
+      ),
+    );
   return {
     /** Every thread per group, folded or not. Null when grouping is off. */
     groups,
@@ -84,16 +82,16 @@ export function useSidebarAttentionGroups(
           ),
     /** The active list's rows with group headers added and folded rows dropped; as is when off. */
     listItems: (rows: ReadonlyArray<SidebarListItem>) =>
-      groupKeys === null ? rows : attentionListItems(rows, groupKeys, expanded, openThreadKey),
+      groupByKey === null ? rows : attentionListItems(rows, groupByKey, expanded, openThreadKey),
     foldKey: SIDEBAR_ATTENTION_GROUPS.map((group) => expanded[group]).join(":"),
     /** Regroups a time-ordered drag preview order (see `attentionDragOrder`); as is when off. */
     dragOrder: (
       keys: ReadonlyArray<string>,
       threadByKey: ReadonlyMap<string, EnvironmentThreadShell>,
     ): ReadonlyArray<string> =>
-      groupKeys === null
+      groupByKey === null
         ? keys
-        : attentionDragOrder(keys, groupKeys, (key) => {
+        : attentionDragOrder(keys, groupByKey, (key) => {
             const thread = threadByKey.get(key);
             return thread && resolveSidebarAttentionGroup(thread, isThreadWorking(thread));
           }),

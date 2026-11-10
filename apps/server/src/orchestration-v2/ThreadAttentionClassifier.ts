@@ -38,13 +38,15 @@ function isLoneShortNothing(text: string): boolean {
   );
 }
 
+/** Whether `text` matches `pattern` and its first sentence has no hedge word. */
+const matchesUnhedged = (pattern: RegExp, text: string) =>
+  pattern.test(text) && !HEDGE.test(firstSentence(text));
+
 /** A last line without the heading counts only when it starts "Nothing needed from you" and its
  *  first sentence has no hedge word; otherwise null, so such a message never gives needs-you. */
 function classifyLastLine(line: string): ThreadAttentionMark | null {
   const text = stripListMarkerAndEmphasis(line);
-  return NOTHING_NEEDED_FROM_YOU.test(text) && !HEDGE.test(firstSentence(text))
-    ? "nothing-needed"
-    : null;
+  return matchesUnhedged(NOTHING_NEEDED_FROM_YOU, text) ? "nothing-needed" : null;
 }
 
 /** What a message's closing "What I need from you" section asks for, null for an empty one. Its
@@ -53,15 +55,16 @@ function classifyLastLine(line: string): ThreadAttentionMark | null {
  *  "nothing"/"none" sentence; else needs-you. Without the heading, see `classifyLastLine`. */
 export function classifyClosingSection(messageText: string): ThreadAttentionMark | null {
   const lines = messageText.split(/\r?\n/u).map((line) => line.trim().replace(/^(?:>\s*)+/u, ""));
-  const headingIndex = lines.findLastIndex((line) => headingInlineText(line) !== null);
+  const inlineTexts = lines.map(headingInlineText);
+  const headingIndex = inlineTexts.findLastIndex((inline) => inline !== null);
   if (headingIndex < 0) {
     const last = lines.findLast((line) => line.length > 0);
     return last === undefined ? null : classifyLastLine(last);
   }
-  const inline = headingInlineText(lines[headingIndex]!)!.trim();
+  const inline = inlineTexts[headingIndex]!.trim();
   const first = inline || lines.slice(headingIndex + 1).find((line) => line.length > 0);
   if (first === undefined) return null;
   const text = stripListMarkerAndEmphasis(first);
-  if (NOTHING_NEEDED.test(text) && !HEDGE.test(firstSentence(text))) return "nothing-needed";
+  if (matchesUnhedged(NOTHING_NEEDED, text)) return "nothing-needed";
   return isLoneShortNothing(text) ? "nothing-needed" : "needs-you";
 }

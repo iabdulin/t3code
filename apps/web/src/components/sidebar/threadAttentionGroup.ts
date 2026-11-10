@@ -78,35 +78,51 @@ export function shownAttentionRows<T>(
   return expanded ? rows : rows.filter(isOpenThread);
 }
 
+/** The group each active thread key belongs to; a key that is absent has no known group. */
+export type SidebarAttentionGroupByKey = ReadonlyMap<string, SidebarAttentionGroup>;
+
+/**
+ * Buckets items by group in one pass and returns the non-empty groups in `SIDEBAR_ATTENTION_GROUPS`
+ * order, each with its items in input order. An item whose `groupOf` is undefined is dropped.
+ */
+function groupRows<T>(
+  items: ReadonlyArray<T>,
+  groupOf: (item: T) => SidebarAttentionGroup | undefined,
+): ReadonlyArray<readonly [SidebarAttentionGroup, ReadonlyArray<T>]> {
+  const buckets = new Map<SidebarAttentionGroup, T[]>();
+  for (const item of items) {
+    const group = groupOf(item);
+    if (group === undefined) continue;
+    const bucket = buckets.get(group);
+    if (bucket) bucket.push(item);
+    else buckets.set(group, [item]);
+  }
+  return SIDEBAR_ATTENTION_GROUPS.flatMap((group) => {
+    const bucket = buckets.get(group);
+    return bucket ? [[group, bucket] as const] : [];
+  });
+}
+
+const isThreadRow = (item: SidebarListItem): item is Extract<SidebarListItem, { kind: "thread" }> =>
+  item.kind === "thread";
+
 /**
  * The active list's items from its thread rows: each group with threads gets its header, then its
- * shown rows in input order. `groupKeys` holds every active key per group; a thread row in no group
+ * shown rows in input order. `groupByKey` holds every active key's group; a thread row in no group
  * goes to Other, and marker items are dropped.
  */
 export function attentionListItems(
   rows: ReadonlyArray<SidebarListItem>,
-  groupKeys: Readonly<Record<SidebarAttentionGroup, ReadonlyArray<string>>>,
+  groupByKey: SidebarAttentionGroupByKey,
   expanded: Readonly<Record<SidebarAttentionGroup, boolean>>,
   openThreadKey: string | null,
 ): SidebarListItem[] {
-  const groupByKey = new Map(
-    SIDEBAR_ATTENTION_GROUPS.flatMap((group) => groupKeys[group].map((key) => [key, group])),
+  return groupRows(rows.filter(isThreadRow), (row) => groupByKey.get(row.key) ?? "other").flatMap(
+    ([group, groupItems]): SidebarListItem[] => [
+      { kind: "marker", marker: `${group}-header` },
+      ...shownAttentionRows(groupItems, expanded[group], (row) => row.key === openThreadKey),
+    ],
   );
-  return SIDEBAR_ATTENTION_GROUPS.flatMap((group): SidebarListItem[] => {
-    const groupRows = rows.filter(
-      (row) => row.kind === "thread" && (groupByKey.get(row.key) ?? "other") === group,
-    );
-    return groupRows.length === 0
-      ? []
-      : [
-          { kind: "marker", marker: `${group}-header` },
-          ...shownAttentionRows(
-            groupRows,
-            expanded[group],
-            (row) => row.kind === "thread" && row.key === openThreadKey,
-          ),
-        ];
-  });
 }
 
 const isAttentionHeader = (item: SidebarListItem) =>
@@ -115,22 +131,17 @@ const isAttentionHeader = (item: SidebarListItem) =>
 
 /**
  * A time-ordered drag preview's active order, regrouped: each group's header id, then its keys in
- * the given order. `groupKeys` holds every active key per group, folded or not; `groupOfOther`
+ * the given order. `groupByKey` holds every active key's group, folded or not; `groupOfOther`
  * places a key from outside the active list, such as a thread dragged in from Pinned.
  */
 export function attentionDragOrder(
   keys: ReadonlyArray<string>,
-  groupKeys: Readonly<Record<SidebarAttentionGroup, ReadonlyArray<string>>>,
+  groupByKey: SidebarAttentionGroupByKey,
   groupOfOther: (key: string) => SidebarAttentionGroup | undefined,
 ): string[] {
-  const groupByKey = new Map(
-    SIDEBAR_ATTENTION_GROUPS.flatMap((group) => groupKeys[group].map((key) => [key, group])),
+  return groupRows(keys, (key) => groupByKey.get(key) ?? groupOfOther(key)).flatMap(
+    ([group, groupKeys]) => [sidebarMarkerId(`${group}-header`), ...groupKeys],
   );
-  const groupOf = (key: string) => groupByKey.get(key) ?? groupOfOther(key);
-  return SIDEBAR_ATTENTION_GROUPS.flatMap((group) => {
-    const rows = keys.filter((key) => groupOf(key) === group);
-    return rows.length === 0 ? [] : [sidebarMarkerId(`${group}-header`), ...rows];
-  });
 }
 
 /**

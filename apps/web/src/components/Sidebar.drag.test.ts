@@ -795,7 +795,11 @@ describe("attention headers", () => {
       settledHeader,
       marker("settled-placeholder"),
     ];
-    const groupKeys = { "needs-you": ["a1", "a3"], other: [], "nothing-needed": ["a2"] };
+    const groupKeys = new Map([
+      ["a1", "needs-you"],
+      ["a3", "needs-you"],
+      ["a2", "nothing-needed"],
+    ] as const);
     const pinnedGroup = (key: string) => (key === "p1" ? ("nothing-needed" as const) : undefined);
     const needsYou = sidebarMarkerId("needs-you-header");
     const nothingNeeded = sidebarMarkerId("nothing-needed-header");
@@ -843,9 +847,12 @@ describe("attention headers", () => {
     const base = { items, settledOrder: [], settledExpanded: false };
     const rested = preview(base, "a1", "a1").get(ids[0]!);
     const noOther = () => undefined;
-    const withHidden = { "needs-you": ["a1"], other: ["o1"], "nothing-needed": ["a2"] };
+    const withoutHidden = new Map([
+      ["a1", "needs-you"],
+      ["a2", "nothing-needed"],
+    ] as const);
     // An order that misses a shown header falls back to keeping every header in its slot.
-    const withoutHidden = { ...withHidden, other: [] };
+    const withHidden = new Map([...withoutHidden, ["o1", "other"] as const]);
     for (const groupKeys of [withHidden, withoutHidden]) {
       const activeOrder = attentionDragOrder(["o1", "a2", "a1"], groupKeys, noOther);
       for (const key of ["a1", "a2"]) {

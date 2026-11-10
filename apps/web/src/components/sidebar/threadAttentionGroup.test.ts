@@ -6,6 +6,7 @@ import {
   partitionThreadsByAttention,
   resolveSidebarAttentionGroup,
   SIDEBAR_ATTENTION_GROUPS,
+  type SidebarAttentionGroup,
 } from "./threadAttentionGroup";
 
 type TestThread = Parameters<typeof resolveSidebarAttentionGroup>[0];
@@ -105,6 +106,13 @@ describe("SIDEBAR_ATTENTION_GROUPS", () => {
   });
 });
 
+const byKey = (keys: Record<SidebarAttentionGroup, string[]>) =>
+  new Map(
+    Object.entries(keys).flatMap(([group, list]) =>
+      list.map((key) => [key, group as SidebarAttentionGroup] as const),
+    ),
+  );
+
 describe("attentionListItems", () => {
   const expanded = { "needs-you": true, other: true, "nothing-needed": true };
   const rows = (...keys: string[]) =>
@@ -114,7 +122,7 @@ describe("attentionListItems", () => {
     expect(
       attentionListItems(
         rows("a", "b", "c"),
-        { "needs-you": ["b"], other: [], "nothing-needed": ["a", "c"] },
+        byKey({ "needs-you": ["b"], other: [], "nothing-needed": ["a", "c"] }),
         expanded,
         null,
       ),
@@ -131,7 +139,7 @@ describe("attentionListItems", () => {
     expect(
       attentionListItems(
         rows("b", "d"),
-        { "needs-you": ["b"], other: ["d"], "nothing-needed": [] },
+        byKey({ "needs-you": ["b"], other: ["d"], "nothing-needed": [] }),
         { ...expanded, "needs-you": false },
         "d",
       ),
@@ -146,7 +154,7 @@ describe("attentionListItems", () => {
     expect(
       attentionListItems(
         rows("a", "z"),
-        { "needs-you": ["a"], other: [], "nothing-needed": [] },
+        byKey({ "needs-you": ["a"], other: [], "nothing-needed": [] }),
         expanded,
         null,
       ),
@@ -162,7 +170,7 @@ describe("attentionListItems", () => {
     expect(
       attentionListItems(
         rows("a", "b", "c"),
-        { "needs-you": ["a", "b", "c"], other: [], "nothing-needed": [] },
+        byKey({ "needs-you": ["a", "b", "c"], other: [], "nothing-needed": [] }),
         { ...expanded, "needs-you": false },
         "b",
       ),

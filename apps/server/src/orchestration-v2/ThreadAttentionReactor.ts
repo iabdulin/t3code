@@ -102,11 +102,13 @@ const make = Effect.gen(function* () {
       const run = event.payload;
       const clears = CLEARING_STATUSES.has(run.status);
       if (run.status !== "completed" && !clears) return;
-      const { thread, runs, messages } = yield* projections.getThreadRecords(
-        event.threadId,
-        ["messages", "runs"],
-        runAssistantMessages(run.id),
-      );
+      const { thread, runs, messages } = clears
+        ? { ...(yield* projections.getThreadRecords(event.threadId, ["runs"])), messages: [] }
+        : yield* projections.getThreadRecords(
+            event.threadId,
+            ["messages", "runs"],
+            runAssistantMessages(run.id),
+          );
       if (
         thread.archivedAt !== null ||
         thread.deletedAt !== null ||

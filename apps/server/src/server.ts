@@ -683,12 +683,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
       yield* service.start();
     }),
   ).pipe(Layer.provide(DelegatedTaskQuestionReactor.layer), Layer.provide(ProjectionStoreV2.layer)),
-  Layer.effectDiscard(
-    Effect.gen(function* () {
-      const service = yield* ThreadAttentionReactor.ThreadAttentionReactor;
-      yield* service.start();
-    }),
-  ).pipe(Layer.provide(ThreadAttentionReactor.layer), Layer.provide(ProjectionStoreV2.layer)),
+  ThreadAttentionReactor.layerStarted,
   ProviderUsageLimitsIngestion.layer,
   layerProviderInstallationRefresh,
   ProviderInstallation.layer,

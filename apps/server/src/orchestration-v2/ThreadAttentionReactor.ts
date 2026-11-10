@@ -197,3 +197,11 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(ThreadAttentionReactor, make);
+
+/** Runs the reactor, start-up pass included, while the layer is in use. */
+export const layerStarted = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const service = yield* ThreadAttentionReactor;
+    yield* service.start();
+  }),
+).pipe(Layer.provide(layer), Layer.provide(ProjectionStore.layer));

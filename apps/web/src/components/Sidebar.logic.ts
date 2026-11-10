@@ -53,6 +53,7 @@ import { isModelPickerOpen, subscribeToModelPickerVisibility } from "../modelPic
 import { shortcutModifierStore } from "../shortcutModifierState";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
+import type { SidebarAttentionHeaderMarker } from "./sidebar/threadAttentionGroup";
 
 export function shouldNavigateAfterThreadPark(input: {
   readonly threadKey: string;
@@ -212,9 +213,7 @@ export type SidebarListMarker =
   | "working-header"
   | "snoozed-header"
   | "settled-header"
-  | "needs-you-header"
-  | "other-header"
-  | "nothing-needed-header";
+  | SidebarAttentionHeaderMarker;
 
 export function sidebarMarkerId(marker: SidebarListMarker): string {
   return `${SIDEBAR_MARKER_PREFIX}${marker}`;

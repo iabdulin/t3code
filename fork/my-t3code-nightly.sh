@@ -181,6 +181,12 @@ if $force || [[ "$last_built" != "$after" || -z "$zip" ]]; then
     notify "Build failed (dependency install). Kept the current app."
     exit 1
   fi
+  # The browser tests need the Chromium build that matches the installed Playwright.
+  # Upstream bumps Playwright now and then; this is a no-op when the build is present.
+  if ! (cd apps/web && vp env exec --node "$node_version" vp exec playwright install chromium); then
+    notify "Build failed (test browser install). Kept the current app."
+    exit 1
+  fi
   # A rebase can apply cleanly and still break the fork's changes. This runs the repo's
   # checks (types, lint, tests) for the files the fork changed. The checks count
   # untracked files as changed, but those are not part of the build, so git ignores

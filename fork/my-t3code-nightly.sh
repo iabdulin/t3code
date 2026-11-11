@@ -135,30 +135,76 @@ while read -r sha subject; do
   fi
 done < <(git log --reverse --format='%H %s' "main..$BRANCH")
 
-before=$(git rev-parse HEAD)
-if [[ -s "$drop_file" ]]; then
-  editor="$STATE_DIR/drop-editor.sh"
+# Lines of "<local commit> <replacement commit>", filled by refresh_tracked_prs.
+swap_file="$STATE_DIR/swap-commits"
+: > "$swap_file"
+
+# Rebases the branch onto main, leaving out the commits in $drop_file and picking the
+# replacement for each commit in $swap_file. Returns non-zero on a conflict, with the
+# rebase left in progress.
+rebase_onto_main() {
+  local editor="$STATE_DIR/rebase-editor.sh"
   cat > "$editor" <<EOF
 #!/bin/bash
+set -f
 todo="\$1"
 while IFS= read -r line; do
   set -- \$line
-  if [[ "\${1:-}" == pick ]] && grep -Fxq "\$(git rev-parse "\$2")" "$drop_file"; then
-    echo "drop \${*:2}"
-  else
-    echo "\$line"
+  if [[ "\${1:-}" == pick ]]; then
+    sha=\$(git rev-parse "\$2")
+    if grep -Fxq "\$sha" "$drop_file"; then echo "drop \${*:2}"; continue; fi
+    new=\$(awk -v s="\$sha" '\$1 == s { print \$2 }' "$swap_file")
+    if [[ -n "\$new" ]]; then echo "pick \$new"; continue; fi
   fi
+  echo "\$line"
 done < "\$todo" > "\$todo.new" && mv "\$todo.new" "\$todo"
 EOF
   chmod +x "$editor"
   GIT_SEQUENCE_EDITOR="$editor" git rebase -i --quiet main
-else
-  git rebase --quiet main
-fi
-if (( $? != 0 )); then
+}
+
+# fork/tracked-prs lists the upstream pull requests this branch carries a copy of, one
+# number per line. For each one whose newest version is a single commit with the same
+# title as a local commit, records that local commit and its replacement in $swap_file.
+# Returns 0 when at least one replacement was recorded.
+refresh_tracked_prs() {
+  local pr head subject old found=1
+  [[ -f fork/tracked-prs ]] || return 1
+  while read -r pr _; do
+    [[ "$pr" =~ ^[0-9]+$ ]] || continue
+    if ! git fetch --quiet upstream "pull/$pr/head" </dev/null; then
+      log "PR #$pr: could not fetch it"
+      continue
+    fi
+    head=$(git rev-parse FETCH_HEAD)
+    if [[ "$(git rev-list --count "main..$head")" != 1 ]]; then
+      log "PR #$pr: not a single commit on top of upstream main, leaving the local copy"
+      continue
+    fi
+    subject=$(git log -1 --format=%s "$head")
+    old=$(git log --format='%H %s' "main..$BRANCH" | awk -v s="$subject" 'substr($0, index($0, " ") + 1) == s { print $1 }' | tail -1)
+    if [[ -z "$old" ]]; then
+      log "PR #$pr: no local commit titled \"$subject\""
+      continue
+    fi
+    [[ "$old" == "$head" ]] && continue
+    log "PR #$pr: replacing the local copy $(git rev-parse --short "$old") with its newest version $(git rev-parse --short "$head")"
+    echo "$old $head" >> "$swap_file"
+    found=0
+  done < fork/tracked-prs
+  return $found
+}
+
+before=$(git rev-parse HEAD)
+if ! rebase_onto_main; then
   git rebase --abort 2>/dev/null
-  notify "Upstream conflicts with your changes. Kept the current app. See the log."
-  exit 1
+  # A carried pull request goes stale when upstream changes the same files. Its author
+  # usually rebases it, so try once more with the newest version of each tracked one.
+  if ! { refresh_tracked_prs && rebase_onto_main; }; then
+    git rebase --abort 2>/dev/null
+    notify "Upstream conflicts with your changes. Kept the current app. See the log."
+    exit 1
+  fi
 fi
 after=$(git rev-parse HEAD)
 log "branch $BRANCH: $(git rev-parse --short "$before") -> $(git rev-parse --short "$after"), $(git rev-list --count "main..$BRANCH") local commit(s) on top of upstream $(git rev-parse --short main)"

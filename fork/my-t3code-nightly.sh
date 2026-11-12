@@ -26,7 +26,7 @@ STATE_DIR="${MY_T3CODE_STATE_DIR:-$HOME/Library/Application Support/my-t3code-ni
 DB="$HOME/.t3/userdata/statev2.sqlite"
 WINDOW_START_HOUR=0
 WINDOW_END_HOUR=5
-RETRY_SECONDS=900
+RETRY_SECONDS=60
 
 export PATH="$HOME/.local/share/vite-plus/bin:$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 unset T3CODE_DESKTOP_UPDATE_REPOSITORY GITHUB_REPOSITORY
@@ -90,14 +90,15 @@ running_threads() {
 # Returns 0 once T3 Code is idle, 1 when the deadline passes first.
 # An unreadable database counts as busy.
 wait_until_idle() {
-  local count
+  local count last=""
   while :; do
     if count=$(running_threads 2>&1) && [[ "$count" =~ ^[0-9]+$ ]]; then
       (( count == 0 )) && return 0
-      log "$count thread(s) running"
+      [[ "$count" != "$last" ]] && log "$count thread(s) running"
     else
-      log "could not read thread status: $count"
+      [[ "$count" != "$last" ]] && log "could not read thread status: $count"
     fi
+    last=$count
     (( $(date +%s) + RETRY_SECONDS > deadline )) && return 1
     sleep "$RETRY_SECONDS"
   done

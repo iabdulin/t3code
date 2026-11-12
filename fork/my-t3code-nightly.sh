@@ -160,7 +160,8 @@ while IFS= read -r line; do
 done < "\$todo" > "\$todo.new" && mv "\$todo.new" "\$todo"
 EOF
   chmod +x "$editor"
-  GIT_SEQUENCE_EDITOR="$editor" git rebase -i --quiet main
+  # git runs the editor through a shell, so a path with a space has to be quoted for it.
+  GIT_SEQUENCE_EDITOR="$(printf '%q' "$editor")" git rebase -i --quiet main
 }
 
 # fork/tracked-prs lists the upstream pull requests this branch carries a copy of, one

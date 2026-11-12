@@ -1001,7 +1001,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     },
   });
   const boringSidebarEnabled = useClientSettings((settings) => settings.boringSidebarEnabled);
-  const folderRowsMultiline = useClientSettings((settings) => settings.boringSidebarMultilineRows);
   const newThreadContext = useHandleNewThread();
   // Row callbacks capture only the handler; the rest of the context changes with the route.
   const { handleNewThread } = newThreadContext;
@@ -3242,7 +3241,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     id="sidebar-thread-search-results"
                     role="listbox"
                     aria-label="Thread search results"
-                    className="flex flex-col gap-px"
+                    className="-mx-(--sidebar-content-inset) flex flex-col gap-px"
                   >
                     {threadSearchResults.map((thread, index) => {
                       const threadKey = scopedThreadKey(
@@ -3323,7 +3322,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     // controls.
                     role="presentation"
                     className={cn(
-                      "relative flex flex-col gap-px",
+                      "relative -mx-(--sidebar-content-inset) flex flex-col gap-px",
                       sidebarListItems.length > 0 && "flex-1",
                       actionSweep !== null && "**:pointer-events-none",
                       // Projected rows (two boundary labels, two hints) extend the scroll range; a range that
@@ -3342,15 +3341,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         const threadKey = scopedThreadKey(
                           scopeThreadRef(thread.environmentId, thread.id),
                         );
-                        const isCard =
-                          section === "active" || section === "pinned" || section === "working";
-                        const rowVariant = folderRow
-                          ? folderRowsMultiline
-                            ? "folder-multiline"
-                            : "folder"
-                          : isCard
-                            ? "card"
-                            : "slim";
+                        const rowVariant = folderRow ? "folder" : "slim";
                         return (
                           <SortableThreadRow
                             key={threadKey}

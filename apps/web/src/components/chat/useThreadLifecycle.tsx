@@ -78,6 +78,7 @@ import { environmentThreadDetails } from "../../state/threads";
 import { openSideChatTab } from "../../lib/sideChatPane";
 import type { useLocalDispatchState } from "./useLocalDispatchState";
 const RELATED_THREAD_SHELL_WAIT_MS = 1_000;
+const SNOOZE_SHORTCUT_MS = 3 * 60 * 60 * 1_000;
 const NO_RUN_STOP_ATOM = Atom.make<RunStopPresentation | null>(null).pipe(
   Atom.withLabel("web-thread-run-stop:empty"),
 );
@@ -180,7 +181,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   } = input;
   const navigate = useNavigate();
   const router = useRouter();
-  const { settleThread, pinThread, confirmAndUnpinThread } = useThreadActions();
+  const { settleThread, snoozeThread, pinThread, confirmAndUnpinThread } = useThreadActions();
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const switchGitRef = useAtomCommand(vcsEnvironment.switchRef, { reportFailure: false });
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
@@ -665,6 +666,18 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       }
       if (settleAndAdvance(activeThreadRef)) return;
       void settleThread(activeThreadRef).then(toastThreadActionFailure("Failed to settle thread"));
+    },
+    "thread.snooze": () => {
+      if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return false;
+      if (!activeThreadShell || !activeThreadRef || !serverConfigLoaded) return;
+      if (activeThreadSnoozed) {
+        void handleUnsnoozeActiveThread();
+        return;
+      }
+      const snoozedUntil = new Date(Date.now() + SNOOZE_SHORTCUT_MS).toISOString();
+      void snoozeThread(activeThreadRef, snoozedUntil).then(
+        toastThreadActionFailure("Failed to snooze thread"),
+      );
     },
     "thread.pin": ({ event }) => {
       // An open project list pins its highlighted project with this key instead.
